@@ -1,0 +1,8 @@
+mediapipe
+numpy
+opencv-python
+scipy
+
+[threed]
+trimesh
+open3d

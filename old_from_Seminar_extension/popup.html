@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Eye Gaze Enlarger</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 12px;
+        width: 260px;
+      }
+      button {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        cursor: pointer;
+        margin-top: 8px;
+        width: 100%;
+        background: #f9f9f9;
+        transition: background 0.2s;
+      }
+      button:hover { background: #eee; }
+      h1, h3 { margin: 0 0 8px 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Eye Gaze Enlarger</h1>
+    <h3>Control</h3>
+
+    <button id="btn-enable">เปิดขยายตามสายตา</button>
+    <button id="btn-disable">ปิดขยาย</button>
+    <button id="calibrateBtn">เริ่ม Calibration</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

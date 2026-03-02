@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "connect python dynamic distance",
+  "version": "1.0.0",
+  "description": "ขยายรูปและข้อความตามสายตา พร้อม calibration แบบแม่นยำ",
+  "action": {
+    "default_title": "Open popup",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": [
+        "node_modules/onnxruntime-web/dist/ort.min.js",
+        "libs/webgazer.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [{
+      "resources": [
+          "node_modules/onnxruntime-web/dist/ort.min.js",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs",
+          "model_merged.onnx"
+      ],
+      "matches": ["<all_urls>"]
+  }]
+}
