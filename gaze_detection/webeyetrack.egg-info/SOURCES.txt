@@ -6,6 +6,8 @@ demo/calibration_widget.py
 demo/constants.py
 demo/gaze_dot_canvas.py
 demo/main.py
+demo/ws_bridge.py
+demo/ws_server.py
 scripts/ml_routines/data.py
 scripts/ml_routines/eval_autoencoder.py
 scripts/ml_routines/eval_eye_of_the_typer.py
