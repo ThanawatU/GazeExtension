@@ -39,6 +39,9 @@ _ws = None
 _lock = threading.Lock()
 _reconnect_delay = 2  # seconds between reconnect attempts
 
+def to_float(v):
+    try: return float(v)
+    except: return 0.0
 
 # ── Internal async worker ────────────────────────────────────────────────────
 
@@ -90,7 +93,7 @@ def send_gaze(gaze_result):
     # ── Build payload ────────────────────────────────────────────────────────
     # Adjust these attribute names to match your GazeResult dataclass/object:
     try:
-        norm_pos = list(gaze_result.norm_pos)          # [x, y]
+        norm_pos = list(gaze_result.norm_pog)          # [x, y]
     except AttributeError:
         norm_pos = [0.0, 0.0]
 
@@ -109,6 +112,9 @@ def send_gaze(gaze_result):
     except AttributeError:
         timestamp = time.time()
 
+    norm_pos = [to_float(v) for v in norm_pos]
+    head_vector = [to_float(v) for v in head_vector]
+    timestamp = to_float(timestamp)
     payload = json.dumps({
         "type": "GAZE_RESULT",
         "data": {
