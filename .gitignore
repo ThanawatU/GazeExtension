@@ -1,3 +1,5 @@
 node_modules/
 seminar/
 .venv/
+.venvp310/ó
+.*

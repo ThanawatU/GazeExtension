@@ -3,14 +3,14 @@ import cvzone
 from cvzone.FaceMeshModule import FaceMeshDetector
 import numpy as np
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 detector = FaceMeshDetector(maxFaces=1)
 
 textList = ["Welcome to ", "Murtaza's Workshop.",
             "Here we will study", "Computer Vision,", "Robotics and AI.",
             "If you like this video", "Like, Share", "and Subscribe."]
 
-sen = 25  # more is less
+sen = 10  # more is less
 
 while True:
     success, img = cap.read()
@@ -35,7 +35,7 @@ while True:
 
         for i, text in enumerate(textList):
             singleHeight = 20 + int((int(d/sen)*sen)/4)
-            scale = 0.4 + (int(d/sen)*sen)/75
+            scale = 0.4 + (int(d/sen)*sen)/75 
             cv2.putText(imgText, text, (50, 50 + (i * singleHeight)),
                         cv2.FONT_ITALIC, scale, (255, 255, 255), 2)
 
