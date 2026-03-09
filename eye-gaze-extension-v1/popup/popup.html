@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GazeLink Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 300px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f0f13; color: #e8e8f0; }
+    .header { background: linear-gradient(135deg, #6c47ff 0%, #a855f7 100%); padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+    .header-icon { width: 36px; height: 36px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .header h1 { font-size: 18px; font-weight: 700; }
+    .header p { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+    .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 20px; background: #1a1a24; border-bottom: 1px solid #2a2a3a; font-size: 12px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; transition: background 0.3s; flex-shrink: 0; }
+    .status-dot.active { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .status-dot.warning { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; animation: pulse 1.2s infinite; }
+    .status-dot.error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-text { flex: 1; color: #aaa; }
+    .main-toggle { margin: 0 20px; padding: 14px 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a3a; }
+    .main-toggle label { font-size: 14px; font-weight: 600; }
+    .toggle-switch { position: relative; width: 44px; height: 24px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #333; border-radius: 24px; transition: 0.3s; }
+    .slider:before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+    input:checked + .slider { background: #6c47ff; }
+    input:checked + .slider:before { transform: translateX(20px); }
+    .settings-section { padding: 14px 20px; border-bottom: 1px solid #2a2a3a; }
+    .section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #6c47ff; font-weight: 700; margin-bottom: 12px; }
+    .setting-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .setting-label { font-size: 13px; color: #ccc; }
+    .setting-sublabel { font-size: 10px; color: #666; margin-top: 1px; }
+    .slider-input-wrap { display: flex; align-items: center; gap: 8px; }
+    input[type=range] { -webkit-appearance: none; width: 100px; height: 4px; background: #333; border-radius: 4px; outline: none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #6c47ff; border-radius: 50%; cursor: pointer; }
+    .value-badge { min-width: 36px; text-align: right; font-size: 12px; font-weight: 600; color: #a78bfa; }
+    .color-options { display: flex; gap: 8px; margin-top: 8px; }
+    .color-btn { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: border-color 0.2s; }
+    .color-btn.selected { border-color: white; }
+    .checkbox-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .checkbox-row:last-child { margin-bottom: 0; }
+    .checkbox-row input[type=checkbox] { margin-top: 2px; accent-color: #6c47ff; width: 14px; height: 14px; flex-shrink: 0; }
+    .checkbox-row div label { font-size: 13px; color: #ccc; }
+    .checkbox-row div small { display: block; font-size: 10px; color: #666; margin-top: 1px; }
+    .calibrate-btn {
+      display: block; width: calc(100% - 40px); margin: 0 20px 14px;
+      padding: 9px; background: #1a1a24; border: 1px solid #6c47ff;
+      border-radius: 8px; color: #a78bfa; font-size: 13px; font-weight: 600;
+      cursor: pointer; text-align: center; transition: background 0.2s;
+    }
+    .calibrate-btn:hover { background: #2a1a4a; }
+    .footer { padding: 12px 20px; display: flex; justify-content: center; }
+    .help-text { font-size: 10px; color: #555; text-align: center; line-height: 1.5; }
+    .notice { margin: 10px 20px; padding: 10px; background: #1e1530; border: 1px solid #4c3a8a; border-radius: 6px; font-size: 11px; color: #c4b5fd; line-height: 1.5; display: none; }
+    .notice.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">👁️</div>
+    <div><h1>GazeLink</h1><p>Eye-controlled link zoom</p></div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Inactive</span>
+  </div>
+
+  <div class="main-toggle">
+    <label for="enableToggle">Enable Eye Tracking</label>
+    <label class="toggle-switch">
+      <input type="checkbox" id="enableToggle" />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="notice" id="notice">
+    ⚠️ Run <code>ws_server.py</code> and your Python demo to start.
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title">Link Interaction</div>
+    <div class="setting-row">
+      <div><div class="setting-label">Dwell Time</div><div class="setting-sublabel">How long to look before activating</div></div>
+      <div class="slider-input-wrap">
+        <input type="range" id="dwellTime" min="200" max="3000" step="100" value="800"/>
+        <span class="value-badge" id="dwellTimeVal">0.8s</span>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Zoom Scale</div><div class="setting-sublabel">How much to magnify the link</div></div>
+      <div class="slider-input-wrap">
+        <input type="range" id="zoomScale" min="1.1" max="3.0" step="0.1" value="1.8"/>
+        <span class="value-badge" id="zoomScaleVal">1.8×</span>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:14px">Effects</div>
+    <div class="checkbox-row"><input type="checkbox" id="doZoom" checked /><div><label for="doZoom">Zoom link on gaze</label><small>Scales up the link element</small></div></div>
+    <div class="checkbox-row"><input type="checkbox" id="doGlow" checked /><div><label for="doGlow">Glow highlight</label><small>Adds colored glow around the link</small></div></div>
+    <div class="checkbox-row"><input type="checkbox" id="doTooltip" checked /><div><label for="doTooltip">Show URL tooltip</label><small>Displays the link URL above it</small></div></div>
+    <div class="checkbox-row"><input type="checkbox" id="doOpenOnDwell" /><div><label for="doOpenOnDwell">Open link after dwell</label><small>Navigates to link after dwell time</small></div></div>
+
+    <div class="section-title" style="margin-top:14px">Glow Color</div>
+    <div class="color-options" id="colorOptions">
+      <div class="color-btn selected" data-color="#a855f7" style="background:#a855f7"></div>
+      <div class="color-btn" data-color="#22c55e" style="background:#22c55e"></div>
+      <div class="color-btn" data-color="#3b82f6" style="background:#3b82f6"></div>
+      <div class="color-btn" data-color="#f97316" style="background:#f97316"></div>
+      <div class="color-btn" data-color="#ec4899" style="background:#ec4899"></div>
+      <div class="color-btn" data-color="#eab308" style="background:#eab308"></div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title">Display</div>
+    <div class="checkbox-row"><input type="checkbox" id="showGazeDot" checked /><div><label for="showGazeDot">Show gaze dot</label><small>Dot following your gaze position</small></div></div>
+  </div>
+
+    <div class="settings-section">
+    <div class="section-title">Night Shift</div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="nightShift" />
+      <div>
+        <label for="nightShift">Enable Night Shift</label>
+        <small>Warm amber overlay to reduce blue light</small>
+      </div>
+    </div>
+    <div id="nightShiftTimes" style="display:none; flex-direction:column; gap:8px; margin-top:10px;">
+      <div class="setting-row">
+        <div class="setting-label">Start time</div>
+        <input type="time" id="nightShiftStart" value="20:00"
+          style="background:#1a1a24; color:#e8e8f0; border:1px solid #3a3a5a;
+                border-radius:6px; padding:4px 8px; font-size:12px;" />
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">End time</div>
+        <input type="time" id="nightShiftEnd" value="07:00"
+          style="background:#1a1a24; color:#e8e8f0; border:1px solid #3a3a5a;
+                border-radius:6px; padding:4px 8px; font-size:12px;" />
+      </div>
+      <!-- Sliders -->
+      <div class="setting-row">
+        <div><div class="setting-label">Warmth</div><div class="setting-sublabel">Amber tint intensity</div></div>
+        <div class="slider-input-wrap">
+          <input type="range" id="nightShiftWarmth" min="0" max="100" step="5" value="30"/>
+          <span class="value-badge" id="nightShiftWarmthVal">30%</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Brightness</div><div class="setting-sublabel">Screen dimming</div></div>
+        <div class="slider-input-wrap">
+          <input type="range" id="nightShiftBrightness" min="50" max="100" step="5" value="95"/>
+          <span class="value-badge" id="nightShiftBrightnessVal">95%</span>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+  
+  <button class="calibrate-btn" id="calibrateBtn">🎯 Start Calibration</button>
+
+  <div class="footer">
+    <p class="help-text">Powered by <strong>WebEyeTrack</strong> &amp; local WebSocket.<br/>Camera stays local — no data sent anywhere.</p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

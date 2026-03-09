@@ -1,0 +1,94 @@
+/* GazeLink Content Script Styles */
+
+#gazelink-dot {
+  position: fixed;
+  z-index: 2147483647;
+  pointer-events: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,0,255,0.9) 30%, rgba(255,0,255,0.3) 100%);
+  transform: translate(-50%, -50%);
+  transition: opacity 0.2s;
+  box-shadow: 0 0 12px 4px rgba(255, 0, 255, 0.4);
+  display: none;
+}
+#gazelink-dot.visible { display: block; }
+
+#gazelink-camera-overlay {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 2147483646;
+  background: #0a0a0f;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  border: 2px solid #6c47ff;
+  display: none;
+  flex-direction: column;
+}
+#gazelink-camera-overlay.visible { display: flex; }
+
+#gazelink-camera-header {
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #6c47ff, #a855f7);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#gazelink-camera-overlay video { width: 200px; height: auto; display: block; }
+
+#gazelink-mesh-canvas {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  width: 200px;
+  pointer-events: none;
+}
+
+#gazelink-tooltip {
+  position: fixed;
+  z-index: 2147483645;
+  background: rgba(10, 10, 20, 0.92);
+  color: #e8e8ff;
+  font-family: -apple-system, BlinkMacSystemFont, monospace;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #6c47ff;
+  pointer-events: none;
+  max-width: 320px;
+  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s;
+  box-shadow: 0 2px 12px rgba(108, 71, 255, 0.3);
+  display: none;
+}
+#gazelink-tooltip.visible { display: block; opacity: 1; transform: translateY(0); }
+
+#gazelink-dwell-ring {
+  position: fixed;
+  z-index: 2147483644;
+  pointer-events: none;
+  display: none;
+}
+#gazelink-dwell-ring svg { transform: rotate(-90deg); }
+#gazelink-dwell-ring.visible { display: block; }
+
+a.gazelink-active {
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+              text-shadow 0.15s ease,
+              filter 0.15s ease !important;
+  transform-origin: center !important;
+  display: inline-block !important;
+}

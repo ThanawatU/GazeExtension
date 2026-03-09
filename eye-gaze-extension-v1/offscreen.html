@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GazeLink Offscreen</title>
+</head>
+<body>
+  <!--
+    This hidden document runs in an isolated context with full DOM + camera access.
+    WebEyeTrack's Web Worker and TensorFlow.js inference run here, keeping
+    the main extension UI thread completely unblocked.
+  -->
+  <video
+    id="video"
+    autoplay
+    playsinline
+    muted
+    style="position:absolute; opacity:0; pointer-events:none; width:640px; height:480px;"
+  ></video>
+
+  <script src="offscreen.js"></script>
+</body>
+</html>
