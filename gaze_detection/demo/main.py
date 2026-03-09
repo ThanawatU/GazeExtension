@@ -7,6 +7,8 @@ import time
 from collections import defaultdict
 
 import yaml
+from cvzone.FaceMeshModule import FaceMeshDetector
+from distance import calculate_distance
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
 from webeyetrack.data_protocols import TrackingStatus
 from webeyetrack.constants import GIT_ROOT
@@ -384,9 +386,15 @@ class App(QtWidgets.QMainWindow):
                 gaze_result.norm_pog[0] = np.clip(gaze_result.norm_pog[0], -bound, bound)
                 gaze_result.norm_pog[1] = np.clip(gaze_result.norm_pog[1], -(bound-y_margin), bound-y_margin)
 
+
+                distance_cm = None
+                if detection:
+                    landmarks = detection.face_landmarks
+                    distance_cm = calculate_distance(landmarks)
+                    
                 # Update the gaze dot position
                 # print("test gaze result:", gaze_result.norm_pog, "state:", gaze_result.gaze_state)
-                send_gaze(gaze_result)  # Send the gaze result to the WebSocket server
+                send_gaze(gaze_result, distance_cm)  # Send the gaze result to the WebSocket server
                 gaze_x, gaze_y = gaze_result.norm_pog
                 self.gaze_dot_updated.emit(gaze_result.gaze_state, gaze_x, gaze_y)
 

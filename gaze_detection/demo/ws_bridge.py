@@ -1,28 +1,3 @@
-"""
-ws_bridge.py — Drop-in gaze broadcaster for your WebEyeTrack demo
-==================================================================
-Import this in your demo's main.py and call start_bridge() once.
-Then wrap your onGazeResults callback with send_gaze().
-
-Usage in main.py:
-─────────────────
-    from ws_bridge import start_bridge, send_gaze
-
-    # Call once at startup (non-blocking — runs in background thread)
-    start_bridge()
-
-    # Inside your existing gaze callback:
-    def my_gaze_callback(gaze_result):
-        send_gaze(gaze_result)          # ← add this line
-        # ... rest of your existing code unchanged
-
-GazeResult fields used (adjust attribute names to match your actual object):
-    gaze_result.norm_pos      → [x, y]  normalised POG  (−0.5 … +0.5)
-    gaze_result.state         → str     e.g. "open" / "closed"
-    gaze_result.head_vector   → [x,y,z] optional
-    gaze_result.timestamp     → float   optional
-"""
-
 import asyncio
 import json
 import logging
@@ -39,9 +14,6 @@ _ws = None
 _lock = threading.Lock()
 _reconnect_delay = 2  # seconds between reconnect attempts
 
-def to_float(v):
-    try: return float(v)
-    except: return 0.0
 
 # ── Internal async worker ────────────────────────────────────────────────────
 
@@ -79,7 +51,7 @@ def start_bridge():
     log.info("ws_bridge thread started")
 
 
-def send_gaze(gaze_result):
+def send_gaze(gaze_result, distance_cm=None):
     """
     Send a gaze result to all connected Chrome extension consumers.
     Safe to call from any thread (including the GUI/tracker thread).
@@ -93,35 +65,37 @@ def send_gaze(gaze_result):
     # ── Build payload ────────────────────────────────────────────────────────
     # Adjust these attribute names to match your GazeResult dataclass/object:
     try:
-        norm_pos = list(gaze_result.norm_pog)          # [x, y]
+        norm_pog = [float(x) for x in gaze_result.norm_pog]          # [x, y]
     except AttributeError:
-        norm_pos = [0.0, 0.0]
+        norm_pog = [0.0, 0.0]
 
     try:
         state = gaze_result.state                       # "open" / "closed"
     except AttributeError:
         state = "open"
 
+    # try:
+    #     head_vector = list(gaze_result.head_vector)     # [x, y, z]
+    # except AttributeError:
+    #     head_vector = [0.0, 0.0, 0.0]
+
     try:
-        head_vector = list(gaze_result.head_vector)     # [x, y, z]
-    except AttributeError:
-        head_vector = [0.0, 0.0, 0.0]
+        distance_cm = float(distance_cm)                # Optional: distance in cm
+    except (TypeError, ValueError):
+        distance_cm = None
 
     try:
         timestamp = float(gaze_result.timestamp)
     except AttributeError:
         timestamp = time.time()
 
-    norm_pos = [to_float(v) for v in norm_pos]
-    head_vector = [to_float(v) for v in head_vector]
-    timestamp = to_float(timestamp)
     payload = json.dumps({
         "type": "GAZE_RESULT",
         "data": {
-            "normPog": norm_pos,
+            "normPog": norm_pog,
             "gazeState": state,
-            "headVector": head_vector,
             "timestamp": timestamp,
+            "distanceCm": distance_cm,
         }
     })
 
