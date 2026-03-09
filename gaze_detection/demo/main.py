@@ -42,6 +42,13 @@ class App(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # For optimization send_gaze
+        self.last_sent_pog = None
+
+        # For optimization frame and distance calculation
+        self.frame_count = 0
+        self.last_distance_cm = None
+
         # Connect to the WebSocket server in a background thread
         start_bridge()
 
@@ -83,7 +90,7 @@ class App(QtWidgets.QMainWindow):
         self.cap = cv2.VideoCapture(0)
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_webcam)
-        self.timer.start(30)  # Update every 30ms
+        self.timer.start(40)  # Update every 40ms
 
         # Determine the size of the webcam frame
         width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -386,12 +393,16 @@ class App(QtWidgets.QMainWindow):
                 gaze_result.norm_pog[0] = np.clip(gaze_result.norm_pog[0], -bound, bound)
                 gaze_result.norm_pog[1] = np.clip(gaze_result.norm_pog[1], -(bound-y_margin), bound-y_margin)
 
+                # Make distance calculate every 10 frames instead of every frame for optimization (since distance calculation is expensive)
+                self.frame_count += 1
+                distance_cm = self.last_distance_cm 
 
-                distance_cm = None
-                if detection:
+                if detection and self.frame_count % 10 == 0:  # only recalculate every 10 frames
                     landmarks = detection.face_landmarks
-                    distance_cm = calculate_distance(landmarks)
-                    
+                    self.last_distance_cm = calculate_distance(landmarks)
+                    distance_cm = self.last_distance_cm
+
+                
                 # Update the gaze dot position
                 # print("test gaze result:", gaze_result.norm_pog, "state:", gaze_result.gaze_state)
                 send_gaze(gaze_result, distance_cm)  # Send the gaze result to the WebSocket server
