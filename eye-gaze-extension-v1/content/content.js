@@ -1,6 +1,5 @@
-// content.js — GazeLink (merged)
+// content.js — GazeLink
 // WebSocket connects DIRECTLY here — no routing through background.
-// Brings: link zoom/glow/dwell from new + distance scaling/calibration/overlay from old.
 
 (function () {
   'use strict';
@@ -8,7 +7,7 @@
   const WS_URL = 'ws://localhost:8765';
   const RECONNECT_DELAY_MS = 2000;
 
-  // ─── State ────────────────────────────────────────────────────────────────────
+  // ─── Settings state ───────────────────────────────────────────────────────────
 
   let settings = {
     enabled: false,
@@ -20,33 +19,50 @@
     doOpenOnDwell: false,
     glowColor: '#a855f7',
     showGazeDot: true,
+    nightShift: false,
+    nightShiftWarmth: 30,
+    nightShiftBrightness: 95,
+    nightShiftStart: '20:00',
+    nightShiftEnd: '07:00',
   };
 
-  let ws = null;
-  let reconnectTimer = null;
-  let gazeX = -9999;
-  let gazeY = -9999;
-  let currentTarget = null;
-  let dwellTimer = null;
-  let dwellStartTime = null;
-  let currentDistance = 50;
-  let fontScaled = false;
-  let alertShown = false;
-  let lastGazeX = null;
-  let lastGazeY = null;
+  // ─── Runtime state ────────────────────────────────────────────────────────────
 
-  // ─── WebSocket (direct from content script — same pattern as old extension) ───
+  let ws = null;
+  let wsConnected = false;
+  let reconnectTimer = null;
+  let gazeX = -9999, gazeY = -9999;
+  let currentTarget = null;
+  let dwellTimer = null, dwellStartTime = null;
+  let currentDistance = 50;
+  let fontScaled = false, alertShown = false;
+  let lastGazeX = null, lastGazeY = null;
+  let altHoldTimer = null, altHoldTriggered = false;
+  let nightShiftCheckTimer = null;
+
+  // ─── Drowsiness state ─────────────────────────────────────────────────────────
+  // Thresholds in "drowsy frames received". At 25fps with ~50% drowsy detection
+  // rate, stage1≈12s, stage2≈24s, stage3≈42s. Tune these to taste.
+
+  const DROWSY_STAGE_1 = 20;
+  const DROWSY_STAGE_2 = 40;
+  const DROWSY_STAGE_3 = 70;
+
+  let drowsyCount = 0;
+  let currentBreakStage = 0;
+  let breakScreenVisible = false;
+
+  // ─── WebSocket ────────────────────────────────────────────────────────────────
 
   function connectWS() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-
     try { ws = new WebSocket(WS_URL); }
     catch { scheduleReconnect(); return; }
 
     ws.addEventListener('open', () => {
       ws.send(JSON.stringify({ role: 'consumer' }));
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      console.log('[GazeLink] Connected to ws server');
+      console.log('[GazeLink] WS connected');
       wsConnected = true;
       chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'connected' }).catch(() => {});
     });
@@ -54,26 +70,23 @@
     ws.addEventListener('message', (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
-
       if (!settings.enabled) return;
 
       if (msg.type === 'GAZE_RESULT') {
         const d = msg.data;
-        // console.log('[GazeLink] raw data:', JSON.stringify(d));
-        // Handle gaze position
         if (d.normPog) handleGaze(d.normPog, d.gazeState);
-        // Handle distance if sent by Python server
         if (d.distanceCm !== undefined) {
-          currentDistance = d.distanceCm /1000;
-          // handleDistanceEffects(currentDistance);
+          currentDistance = d.distanceCm / 1000;
           updateOverlay();
+        }
+        if (d.is_drowsy !== undefined) {
+          handleDrowsy(d.is_drowsy);
         }
       }
     });
 
     ws.addEventListener('close', () => {
-      ws = null;
-      wsConnected = false;
+      ws = null; wsConnected = false;
       chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'disconnected' }).catch(() => {});
       if (settings.enabled) scheduleReconnect();
     });
@@ -94,16 +107,16 @@
     }, RECONNECT_DELAY_MS);
   }
 
-  // ─── Gaze smoothing (from old extension) ─────────────────────────────────────
+  // ─── Gaze smoothing ───────────────────────────────────────────────────────────
 
   function smoothGaze(x, y, alpha = 0.2) {
     if (lastGazeX === null) { lastGazeX = x; lastGazeY = y; return { x, y }; }
-    lastGazeX = lastGazeX + alpha * (x - lastGazeX);
-    lastGazeY = lastGazeY + alpha * (y - lastGazeY);
+    lastGazeX += alpha * (x - lastGazeX);
+    lastGazeY += alpha * (y - lastGazeY);
     return { x: lastGazeX, y: lastGazeY };
   }
 
-  // ─── Gaze dot ─────────────────────────────────────────────────────────────────
+  // ─── DOM: Gaze dot ────────────────────────────────────────────────────────────
 
   const dot = document.createElement('div');
   dot.id = '__gazelink_dot__';
@@ -117,7 +130,7 @@
   });
   document.documentElement.appendChild(dot);
 
-  // ─── Tooltip ──────────────────────────────────────────────────────────────────
+  // ─── DOM: Tooltip ─────────────────────────────────────────────────────────────
 
   const tooltip = document.createElement('div');
   tooltip.id = '__gazelink_tooltip__';
@@ -130,7 +143,7 @@
   });
   document.documentElement.appendChild(tooltip);
 
-  // ─── Dwell ring ───────────────────────────────────────────────────────────────
+  // ─── DOM: Dwell ring ──────────────────────────────────────────────────────────
 
   const ring = document.createElement('canvas');
   ring.width = 40; ring.height = 40;
@@ -150,9 +163,10 @@
     ringCtx.strokeStyle = settings.glowColor; ringCtx.lineWidth = 3; ringCtx.stroke();
   }
 
-  // ─── Distance overlay (from old extension) ───────────────────────────────────
+  // ─── DOM: Distance overlay (top-right) ───────────────────────────────────────
 
   const overlay = document.createElement('div');
+  overlay.id = '__gazelink_overlay__';
   Object.assign(overlay.style, {
     position: 'fixed', right: '10px', top: '10px', padding: '5px 10px',
     background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: '13px',
@@ -164,99 +178,86 @@
   function updateOverlay() {
     overlay.textContent = `${window.innerWidth}×${window.innerHeight} | ${currentDistance.toFixed(1)} cm`;
   }
-
   window.addEventListener('resize', updateOverlay);
 
-  // ─── Distance-based font scaling (from old extension) ────────────────────────
-  const BASE_DISTANCE = 60;   
-  const BASE_FONT_SCALE = 1;  
-  const MIN_DISTANCE = 20;    
-  const MAX_DISTANCE = 80;   
+  // ─── DOM: Drowsy counter (bottom-right) ───────────────────────────────────────
+
+  const drowsyOverlay = document.createElement('div');
+  drowsyOverlay.id = '__gazelink_drowsy__';
+  Object.assign(drowsyOverlay.style, {
+    position: 'fixed', right: '10px', bottom: '10px', padding: '6px 12px',
+    background: 'rgba(0,0,0,0.65)', color: '#22c55e',
+    fontSize: '12px', fontFamily: 'monospace',
+    zIndex: '2147483641', borderRadius: '6px',
+    border: '1px solid #22c55e',
+    pointerEvents: 'none', display: 'none',
+    transition: 'color 0.3s ease, border-color 0.3s ease',
+  });
+  document.documentElement.appendChild(drowsyOverlay);
+
+  function updateDrowsyOverlay() {
+    let color = '#22c55e', label = 'Alert';
+    if      (drowsyCount >= DROWSY_STAGE_3) { color = '#7c3aed'; label = 'Sleep!';     }
+    else if (drowsyCount >= DROWSY_STAGE_2) { color = '#ef4444'; label = 'Very Tired'; }
+    else if (drowsyCount >= DROWSY_STAGE_1) { color = '#f59e0b'; label = 'Tired';      }
+    drowsyOverlay.style.color = color;
+    drowsyOverlay.style.borderColor = color;
+    drowsyOverlay.textContent = `😴 ${label} · ${drowsyCount}`;
+  }
+
+  // ─── Distance-based font scaling ──────────────────────────────────────────────
+
+  const BASE_DISTANCE = 60, MIN_DISTANCE = 20, MAX_DISTANCE = 80;
   let lastAppliedScale = null;
 
-  function distanceToFontScale(distance) {
-    const clamped = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance));
-    return clamped / BASE_DISTANCE;
+  function distanceToFontScale(d) {
+    return Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, d)) / BASE_DISTANCE;
   }
 
   function handleDistanceEffects(distance) {
     const scale = distanceToFontScale(distance);
-
-    // if (lastAppliedScale !== null && Math.abs(scale - lastAppliedScale) < 0.02) return;
-    // lastAppliedScale = scale;
-    
-  const els = document.querySelectorAll('p, span, li, h1, h2, h3, h4, h5, h6, a, button');
-    els.forEach(el => {
+    document.querySelectorAll('p, span, li, h1, h2, h3, h4, h5, h6, a, button').forEach(el => {
       const computed = parseFloat(window.getComputedStyle(el).fontSize) || 16;
-      // Store original font size once
-      if (!el.dataset.gazelinkOrigFont) {
-        el.dataset.gazelinkOrigFont = computed;
-      }
-      const orig = parseFloat(el.dataset.gazelinkOrigFont);
+      if (!el.dataset.gazelinkOrigFont) el.dataset.gazelinkOrigFont = computed;
       el.style.transition = 'font-size 0.3s ease';
-      el.style.fontSize = (orig * scale).toFixed(1) + 'px';
-  });
-
-  fontScaled = scale !== 1;
-
-  // Warning
-  if (distance >= 100 && !alertShown) {
-    alertShown = true;
-    showNotification("You're too far from the screen!!!!");
-  } else if (distance < 100) {
-    alertShown = false;
-  }
+      el.style.fontSize = (parseFloat(el.dataset.gazelinkOrigFont) * scale).toFixed(1) + 'px';
+    });
+    fontScaled = scale !== 1;
+    if (distance >= 100 && !alertShown) { alertShown = true; showNotification("You're too far from the screen!"); }
+    else if (distance < 100) alertShown = false;
   }
 
-function resetDistanceScaling() {
-  document.querySelectorAll('p, span, li, h1, h2, h3, h4, h5, h6, a, button').forEach(el => {
-    el.style.fontSize = el.dataset.gazelinkOrigFont ? el.dataset.gazelinkOrigFont + 'px' : '';
-    el.style.transition = '';
-    delete el.dataset.gazelinkOrigFont;
-  });
-  fontScaled = false;
-  lastAppliedScale = null;
-}
-
-  // ─── Coordinate mapping ───────────────────────────────────────────────────────
-
-  function normPogToScreen(nx, ny) {
-    return {
-      sx: (nx + 0.5) * window.innerWidth,
-      sy: (ny + 0.5) * window.innerHeight,
-    };
+  function resetDistanceScaling() {
+    document.querySelectorAll('p, span, li, h1, h2, h3, h4, h5, h6, a, button').forEach(el => {
+      el.style.fontSize = el.dataset.gazelinkOrigFont ? el.dataset.gazelinkOrigFont + 'px' : '';
+      el.style.transition = '';
+      delete el.dataset.gazelinkOrigFont;
+    });
+    fontScaled = false; lastAppliedScale = null;
   }
 
-// ─── Hold Alt/Option for 1 second to toggle font scale ───────────────────────
-// ─── This function works for distance-based scaling and allows quick reset without needing to look at the overlay or open the popup. ───
-  let altHoldTimer = null;
-  let altHoldTriggered = false;
+  // ─── Alt-hold 1s to toggle font scale ────────────────────────────────────────
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Alt' && !altHoldTimer && !altHoldTriggered) {
       altHoldTimer = setTimeout(() => {
         altHoldTriggered = true;
-
-        if (fontScaled) {
-          resetDistanceScaling();
-          showNotification('🔤 Font size reset');
-        } else {
-          handleDistanceEffects(currentDistance);
-          showNotification(`🔍 Font scaled for ${currentDistance.toFixed(0)}cm distance`);
-        }
-      }, 1000); // 1 second 
+        if (fontScaled) { resetDistanceScaling(); showNotification('🔤 Font size reset'); }
+        else { handleDistanceEffects(currentDistance); showNotification(`🔍 Font scaled for ${currentDistance.toFixed(0)}cm`); }
+      }, 1000);
     }
   });
-
   document.addEventListener('keyup', (e) => {
-    if (e.key === 'Alt') {
-      clearTimeout(altHoldTimer);
-      altHoldTimer = null;
-      altHoldTriggered = false; // reset so next hold works
-    }
+    if (e.key === 'Alt') { clearTimeout(altHoldTimer); altHoldTimer = null; altHoldTriggered = false; }
   });
 
-  // ─── Link effects (from new extension) ───────────────────────────────────────
+  // ─── Coordinate mapping ───────────────────────────────────────────────────────
+
+  function normPogToScreen(nx, ny) {
+    return { sx: (nx + 0.5) * window.innerWidth, sy: (ny + 0.5) * window.innerHeight };
+  }
+
+  // ─── Link effects ─────────────────────────────────────────────────────────────
 
   function applyEffects(el) {
     if (!el) return;
@@ -273,8 +274,7 @@ function resetDistanceScaling() {
       el.style.borderRadius = '3px';
     }
     if (settings.doTooltip) {
-      const href = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
-      tooltip.textContent = href;
+      tooltip.textContent = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
       tooltip.style.display = 'block';
     }
   }
@@ -333,18 +333,13 @@ function resetDistanceScaling() {
       if (currentTarget) { clearEffects(currentTarget); currentTarget = null; }
       clearDwell(); dot.style.display = 'none'; return;
     }
-
     let { sx, sy } = normPogToScreen(normPog[0], normPog[1]);
     const smoothed = smoothGaze(sx, sy);
     sx = smoothed.x; sy = smoothed.y;
     gazeX = sx; gazeY = sy;
 
-    if (settings.showGazeDot) {
-      dot.style.display = 'block';
-      dot.style.left = sx + 'px'; dot.style.top = sy + 'px';
-    } else {
-      dot.style.display = 'none';
-    }
+    if (settings.showGazeDot) { dot.style.display = 'block'; dot.style.left = sx + 'px'; dot.style.top = sy + 'px'; }
+    else dot.style.display = 'none';
 
     const target = findTarget(sx, sy);
     if (target !== currentTarget) {
@@ -355,11 +350,148 @@ function resetDistanceScaling() {
     if (settings.doTooltip && currentTarget) positionTooltip(sx, sy);
   }
 
-  // ─── Calibration (from old extension) ────────────────────────────────────────
+  // ─── Night Shift ──────────────────────────────────────────────────────────────
+
+  function isNightShiftActive() {
+    if (!settings.nightShift) return false;
+    const now = new Date();
+    const cur = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = (settings.nightShiftStart || '20:00').split(':').map(Number);
+    const [eh, em] = (settings.nightShiftEnd   || '07:00').split(':').map(Number);
+    const s = sh * 60 + sm, e = eh * 60 + em;
+    return s > e ? (cur >= s || cur < e) : (cur >= s && cur < e);
+  }
+
+  function applyNightShift() {
+    if (isNightShiftActive()) {
+      const w = (settings.nightShiftWarmth ?? 30) / 100;
+      const b = (settings.nightShiftBrightness ?? 95) / 100;
+      document.documentElement.style.filter = `sepia(${w}) saturate(${1 - w * 0.15}) brightness(${b})`;
+    } else {
+      document.documentElement.style.filter = '';
+    }
+  }
+
+  function startNightShiftWatch() {
+    applyNightShift();
+    if (nightShiftCheckTimer) clearInterval(nightShiftCheckTimer);
+    nightShiftCheckTimer = setInterval(applyNightShift, 60000);
+  }
+
+  function stopNightShiftWatch() {
+    document.documentElement.style.filter = '';
+    if (nightShiftCheckTimer) { clearInterval(nightShiftCheckTimer); nightShiftCheckTimer = null; }
+  }
+
+  // ─── Break screen ─────────────────────────────────────────────────────────────
+
+  const BREAK_CONFIGS = [
+    {
+      emoji: '😴', color: '#f59e0b',
+      title: 'Time for a Short Break',
+      message: "You've been showing signs of drowsiness. Rest your eyes for a few minutes.",
+      sub: 'Look away from the screen and focus on something distant.',
+      btn: "I'll take a break ✓", escapable: true,
+    },
+    {
+      emoji: '😵', color: '#ef4444',
+      title: 'You Really Need a Break',
+      message: "You've been drowsy for a while. Step away from the screen.",
+      sub: 'Stretch, drink some water, and rest your eyes properly.',
+      btn: 'Taking a break now ✓', escapable: true,
+    },
+    {
+      emoji: '🛌', color: '#7c3aed',
+      title: 'Time to Sleep',
+      message: 'Your body needs rest. Please stop using the screen and go to bed.',
+      sub: 'No screen is worth your health. Good night. 🌙',
+      btn: 'Going to sleep ✓', escapable: false,
+    },
+  ];
+
+  const breakScreen = document.createElement('div');
+  breakScreen.id = '__gazelink_break__';
+  Object.assign(breakScreen.style, {
+    position: 'fixed', inset: '0', zIndex: '2147483645',
+    display: 'none', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(12px)', webkitBackdropFilter: 'blur(12px)',
+    background: 'rgba(5,5,15,0.75)', opacity: '0',
+    transition: 'opacity 0.4s ease',
+  });
+  const breakCard = document.createElement('div');
+  Object.assign(breakCard.style, {
+    background: 'rgba(15,15,25,0.97)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '20px', padding: '48px 40px', maxWidth: '440px', width: '90%',
+    textAlign: 'center', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+    transform: 'translateY(20px)', transition: 'transform 0.4s ease',
+  });
+  breakScreen.appendChild(breakCard);
+  document.documentElement.appendChild(breakScreen);
+
+  function showBreakScreen(stage) {
+    const cfg = BREAK_CONFIGS[stage - 1];
+    if (!cfg || breakScreenVisible) return;
+    breakScreenVisible = true;
+
+    breakCard.innerHTML = `
+      <div style="font-size:64px;margin-bottom:16px;line-height:1">${cfg.emoji}</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:${cfg.color};font-weight:700;margin-bottom:12px">
+        GazeLink · Eye Health Alert
+      </div>
+      <h2 style="color:#f0f0ff;font-size:22px;font-weight:700;margin-bottom:14px;line-height:1.3">${cfg.title}</h2>
+      <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">${cfg.message}</p>
+      <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">${cfg.sub}</p>
+      <div style="width:100%;height:4px;background:rgba(255,255,255,0.08);border-radius:4px;margin-bottom:28px;overflow:hidden">
+        <div style="height:100%;width:${(stage/3)*100}%;background:${cfg.color};border-radius:4px"></div>
+      </div>
+      <button id="__gazelink_break_btn__" style="
+        background:${cfg.color};color:white;border:none;padding:13px 32px;
+        border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;
+        width:100%;letter-spacing:0.3px
+      ">${cfg.btn}</button>
+      ${cfg.escapable ? `<p style="color:#444;font-size:11px;margin-top:14px">or press Escape to dismiss</p>` : ''}
+    `;
+
+    breakScreen.style.display = 'flex';
+    requestAnimationFrame(() => {
+      breakScreen.style.opacity = '1';
+      breakCard.style.transform = 'translateY(0)';
+    });
+
+    document.getElementById('__gazelink_break_btn__').addEventListener('click', dismissBreakScreen);
+    if (cfg.escapable) document.addEventListener('keydown', escDismiss);
+  }
+
+  function escDismiss(e) { if (e.key === 'Escape') dismissBreakScreen(); }
+
+  function dismissBreakScreen() {
+    breakScreen.style.opacity = '0';
+    breakCard.style.transform = 'translateY(20px)';
+    setTimeout(() => { breakScreen.style.display = 'none'; }, 400);
+    breakScreenVisible = false;
+    document.removeEventListener('keydown', escDismiss);
+    drowsyCount = Math.max(0, drowsyCount - 10);
+    console.log(drowsyCount)
+    updateDrowsyOverlay();
+  }
+
+  // ─── Drowsiness handler ───────────────────────────────────────────────────────
+
+  function handleDrowsy(isDrowsy) {
+    if (!isDrowsy) return;
+    drowsyCount++;
+    updateDrowsyOverlay();
+
+    if      (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
+    else if (drowsyCount >= DROWSY_STAGE_2 && currentBreakStage < 2) { currentBreakStage = 2; showBreakScreen(2); }
+    else if (drowsyCount >= DROWSY_STAGE_1 && currentBreakStage < 1) { currentBreakStage = 1; showBreakScreen(1); }
+  }
+
+  // ─── Calibration ─────────────────────────────────────────────────────────────
 
   function setupCalibration() {
-    const grid = 3;
-    const points = [];
+    const grid = 3, points = [];
     for (let i = 0; i < grid; i++)
       for (let j = 0; j < grid; j++)
         points.push([i / (grid - 1), j / (grid - 1)]);
@@ -373,41 +505,33 @@ function resetDistanceScaling() {
       background: settings.glowColor, zIndex: '2147483647', cursor: 'pointer',
       transition: 'all 0.2s ease', boxShadow: `0 0 16px 4px ${settings.glowColor}`,
     });
-
     const calLabel = document.createElement('div');
     Object.assign(calLabel.style, {
       position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
       color: 'white', fontFamily: 'monospace', fontSize: '14px', zIndex: '2147483647',
-      background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px',
-      pointerEvents: 'none',
+      background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px', pointerEvents: 'none',
     });
     calLabel.textContent = 'Click each dot to calibrate (5 clicks each)';
     document.documentElement.appendChild(calLabel);
     document.documentElement.appendChild(calDot);
 
     function showNext() {
-      if (index >= points.length) {
-        calDot.remove(); calLabel.remove();
-        showNotification('✅ Calibration complete!');
-        return;
-      }
+      if (index >= points.length) { calDot.remove(); calLabel.remove(); showNotification('✅ Calibration complete!'); return; }
       const [px, py] = points[index];
       calDot.style.left = (px * (window.innerWidth - 40)) + 'px';
-      calDot.style.top = (py * (window.innerHeight - 40)) + 'px';
+      calDot.style.top  = (py * (window.innerHeight - 40)) + 'px';
       sampleCount = 0;
     }
-
     calDot.addEventListener('click', () => {
       sampleCount++;
       calDot.style.background = sampleCount % 2 === 0 ? settings.glowColor : '#fff';
       calLabel.textContent = `Point ${index + 1}/${points.length} — click ${maxSamples - sampleCount} more`;
       if (sampleCount >= maxSamples) { index++; showNext(); }
     });
-
     showNext();
   }
 
-  // ─── Notification helper ──────────────────────────────────────────────────────
+  // ─── Notification ─────────────────────────────────────────────────────────────
 
   function showNotification(text) {
     const n = document.createElement('div');
@@ -423,61 +547,34 @@ function resetDistanceScaling() {
     setTimeout(() => n.remove(), 3000);
   }
 
-  // ─── Night Shift ──────────────────────────────────────────────────────────────
+  // ─── Helpers: show/hide all HUD elements ─────────────────────────────────────
 
-// const nightShiftOverlay = document.createElement('div');
-// nightShiftOverlay.id = '__gazelink_nightshift__';
-// Object.assign(nightShiftOverlay.style, {
-//   position: 'fixed', inset: '0', zIndex: '2147483630',
-//   pointerEvents: 'none', display: 'none',
-//   background: 'rgba(255, 140, 20, 0.15)',
-//   mixBlendMode: 'multiply',
-//   transition: 'opacity 1s ease',
-// });
-// document.documentElement.appendChild(nightShiftOverlay);
-
-let nightShiftCheckTimer = null;
-
-function isNightShiftActive() {
-  if (!settings.nightShift) return false;
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const [startH, startM] = (settings.nightShiftStart || '20:00').split(':').map(Number);
-  const [endH, endM] = (settings.nightShiftEnd || '07:00').split(':').map(Number);
-  const start = startH * 60 + startM;
-  const end = endH * 60 + endM;
-
-  // Handle overnight range (e.g. 20:00 → 07:00)
-  if (start > end) return currentMinutes >= start || currentMinutes < end;
-  return currentMinutes >= start && currentMinutes < end;
-}
-
-function applyNightShift() {
-  if (isNightShiftActive()) {
-    const warmth = (settings.nightShiftWarmth ?? 30) / 100;
-    const brightness = (settings.nightShiftBrightness ?? 95) / 100;
-    document.documentElement.style.filter =
-      `sepia(${warmth}) saturate(${1 - warmth * 0.15}) brightness(${brightness})`;
-  } else {
-    document.documentElement.style.filter = '';
+  function showHUD() {
+    overlay.style.display = 'block';
+    drowsyOverlay.style.display = 'block';
+    updateOverlay();
+    updateDrowsyOverlay();
   }
-}
 
-function startNightShiftWatch() {
-  applyNightShift();
-  if (nightShiftCheckTimer) clearInterval(nightShiftCheckTimer);
-  nightShiftCheckTimer = setInterval(applyNightShift, 60000); // check every minute
-}
+  function hideHUD() {
+    overlay.style.display = 'none';
+    drowsyOverlay.style.display = 'none';
+  }
 
-function stopNightShiftWatch() {
-  nightShiftOverlay.style.display = 'none';
-  if (nightShiftCheckTimer) { clearInterval(nightShiftCheckTimer); nightShiftCheckTimer = null; }
-}
+  function fullStop() {
+    disconnectWS();
+    hideHUD();
+    if (currentTarget) { clearEffects(currentTarget); currentTarget = null; }
+    clearDwell();
+    resetDistanceScaling();
+    dot.style.display = 'none';
+    tooltip.style.display = 'none';
+    drowsyCount = 0;
+    currentBreakStage = 0;
+    updateDrowsyOverlay();
+  }
 
-  // ─── Settings from popup via background ───────────────────────────────────────
-
-  // Store WS connected state so popup can query it
-  let wsConnected = false;
+  // ─── Message listener (popup → content) ──────────────────────────────────────
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'GET_WS_STATUS') {
@@ -486,41 +583,20 @@ function stopNightShiftWatch() {
     }
     if (msg.type === 'SETTINGS_UPDATE') {
       settings = { ...settings, ...msg.settings };
-      if (settings.enabled) {
-        connectWS();
-        overlay.style.display = 'block';
-        updateOverlay();
-      } else {
-        disconnectWS();
-        overlay.style.display = 'none';
-        if (currentTarget) { clearEffects(currentTarget); currentTarget = null; }
-        clearDwell(); resetDistanceScaling();
-        dot.style.display = 'none'; tooltip.style.display = 'none';
-      }
+      if (settings.enabled) { connectWS(); showHUD(); }
+      else fullStop();
+      if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
     if (msg.type === 'STOP_TRACKING') {
       settings.enabled = false;
-      disconnectWS();
-      overlay.style.display = 'none';
-      if (currentTarget) { clearEffects(currentTarget); currentTarget = null; }
-      clearDwell(); resetDistanceScaling();
-      dot.style.display = 'none'; tooltip.style.display = 'none';
+      fullStop();
     }
     if (msg.type === 'CALIBRATE') {
       setupCalibration();
     }
-  });
-
-  // Listen for night shift 
-  chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'NIGHT_SHIFT_UPDATE') {
-      settings.nightShift = msg.nightShift;
-      settings.nightShiftStart = msg.nightShiftStart;
-      settings.nightShiftEnd = msg.nightShiftEnd;
-      settings.nightShiftWarmth = msg.nightShiftWarmth;   
-      settings.nightShiftBrightness = msg.nightShiftBrightness; 
-      if (settings.nightShift) startNightShiftWatch();
-      else stopNightShiftWatch();
+      settings = { ...settings, ...msg };
+      if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
   });
 
@@ -528,13 +604,8 @@ function stopNightShiftWatch() {
 
   chrome.storage.local.get(['gazeSettings'], (result) => {
     if (result.gazeSettings) settings = { ...settings, ...result.gazeSettings };
-    if (settings.enabled) {
-      connectWS();
-      overlay.style.display = 'block';
-      updateOverlay();
-    }
+    if (settings.enabled) { connectWS(); showHUD(); }
     if (settings.nightShift) startNightShiftWatch();
-
   });
 
 })();
