@@ -8,6 +8,7 @@ from collections import defaultdict
 
 import yaml
 from cvzone.FaceMeshModule import FaceMeshDetector
+from drowsiness import DrowsinessDetector
 from distance import calculate_distance
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
 from webeyetrack.data_protocols import TrackingStatus
@@ -41,6 +42,13 @@ class App(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # Drowsiness
+        self.drowsiness = DrowsinessDetector('.venv/lib/python3.10/python/webeyetrack/model_weights/face_landmarker_v2_with_blendshapes.task')
+
+        # FaceAge estimator setup
+        # self.faceage = FaceAgeEstimator('faceage_model.h5')
+        # self.faceage_result = None
+        # self.faceage_predicted = False
 
         # For optimization send_gaze
         self.last_sent_pog = None
@@ -373,6 +381,9 @@ class App(QtWidgets.QMainWindow):
             # Process the frame with WebEyeTrack
             status, gaze_result, detection = self.wet.process_frame(frame)
 
+            # Drowsy check
+            is_drowsy, l_blink, r_blink = self.drowsiness.process_frame(frame)
+
             if self.show_facial_landmarks and detection:
                 frame = vis.draw_landmarks_on_image(frame, detection)
 
@@ -405,7 +416,7 @@ class App(QtWidgets.QMainWindow):
                 
                 # Update the gaze dot position
                 # print("test gaze result:", gaze_result.norm_pog, "state:", gaze_result.gaze_state)
-                send_gaze(gaze_result, distance_cm)  # Send the gaze result to the WebSocket server
+                send_gaze(gaze_result, distance_cm, drowsy=is_drowsy)
                 gaze_x, gaze_y = gaze_result.norm_pog
                 self.gaze_dot_updated.emit(gaze_result.gaze_state, gaze_x, gaze_y)
 

@@ -51,7 +51,7 @@ def start_bridge():
     log.info("ws_bridge thread started")
 
 
-def send_gaze(gaze_result, distance_cm=None):
+def send_gaze(gaze_result, distance_cm=None, drowsy=None):
     """
     Send a gaze result to all connected Chrome extension consumers.
     Safe to call from any thread (including the GUI/tracker thread).
@@ -96,6 +96,7 @@ def send_gaze(gaze_result, distance_cm=None):
             "gazeState": state,
             "timestamp": timestamp,
             "distanceCm": distance_cm,
+            "is_drowsy": drowsy,
         }
     })
 
