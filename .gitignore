@@ -3,3 +3,7 @@ seminar/
 .venv/
 .venvp310/ó
 .*
+.myvenv
+myvenv
+__pycache__/
+*.pyc
