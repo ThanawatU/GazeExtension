@@ -126,10 +126,10 @@ document.querySelectorAll('.color-btn').forEach(btn => {
 });
 
 // Calibration button
-document.getElementById('calibrateBtn').addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'CALIBRATE' });
-  window.close(); // close popup so user can see the calibration dots
-});
+// document.getElementById('calibrateBtn').addEventListener('click', () => {
+//   chrome.runtime.sendMessage({ type: 'CALIBRATE' });
+//   window.close(); // close popup so user can see the calibration dots
+// });
 
 function toggleNightShiftTimes(show) {
   document.getElementById('nightShiftTimes').style.display = show ? 'flex' : 'none';
@@ -139,24 +139,16 @@ document.getElementById('nightShift').addEventListener('change', (e) => {
   settings.nightShift = e.target.checked;
   toggleNightShiftTimes(settings.nightShift);
   saveAndBroadcast();
-  chrome.runtime.sendMessage({
-    type: 'NIGHT_SHIFT_UPDATE',
-    nightShift: settings.nightShift,
-    nightShiftStart: settings.nightShiftStart,
-    nightShiftEnd: settings.nightShiftEnd,
-  });
+  broadcastNightShift();
 });
 
 ['nightShiftStart', 'nightShiftEnd'].forEach(id => {
-  document.getElementById(id).addEventListener('change', (e) => {
+  // 'input' fires on every keystroke — 'change' only fires on blur,
+  // which can be missed when the popup closes.
+  document.getElementById(id).addEventListener('input', (e) => {
     settings[id] = e.target.value;
     saveAndBroadcast();
-    chrome.runtime.sendMessage({
-      type: 'NIGHT_SHIFT_UPDATE',
-      nightShift: settings.nightShift,
-      nightShiftStart: settings.nightShiftStart,
-      nightShiftEnd: settings.nightShiftEnd,
-    });
+    broadcastNightShift();
   });
 });
 

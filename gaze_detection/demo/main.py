@@ -57,6 +57,13 @@ class App(QtWidgets.QMainWindow):
         self.frame_count = 0
         self.last_distance_cm = None
 
+        # For optimization send_gaze
+        self.last_sent_pog = None
+
+        # For optimization frame and distance calculation
+        self.frame_count = 0
+        self.last_distance_cm = None
+
         # Connect to the WebSocket server in a background thread
         start_bridge()
 

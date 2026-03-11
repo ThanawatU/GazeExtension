@@ -1,6 +1,3 @@
-// content.js — GazeLink
-// WebSocket connects DIRECTLY here — no routing through background.
-
 (function () {
   'use strict';
 
@@ -51,6 +48,10 @@
   let drowsyCount = 0;
   let currentBreakStage = 0;
   let breakScreenVisible = false;
+  
+  function saveDrowsyState() {
+  chrome.storage.local.set({ gazelink_drowsy: { count: drowsyCount, stage: currentBreakStage } });
+  }
 
   // ─── WebSocket ────────────────────────────────────────────────────────────────
 
@@ -471,17 +472,27 @@
     setTimeout(() => { breakScreen.style.display = 'none'; }, 400);
     breakScreenVisible = false;
     document.removeEventListener('keydown', escDismiss);
-    drowsyCount = Math.max(0, drowsyCount - 10);
-    console.log(drowsyCount)
+
+    if (currentBreakStage >= 3) {
+      // Final stage — user acknowledged, full reset
+      drowsyCount = 0;
+      currentBreakStage = 0;
+    }
+    // Stages 1 & 2: do nothing — count stays where it is and
+    // keeps climbing toward the next stage naturally.
+
     updateDrowsyOverlay();
+    saveDrowsyState();
   }
 
   // ─── Drowsiness handler ───────────────────────────────────────────────────────
 
   function handleDrowsy(isDrowsy) {
     if (!isDrowsy) return;
+    if (breakScreenVisible) return; // don't keep counting while break screen is shown
     drowsyCount++;
     updateDrowsyOverlay();
+    saveDrowsyState();
 
     if      (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
     else if (drowsyCount >= DROWSY_STAGE_2 && currentBreakStage < 2) { currentBreakStage = 2; showBreakScreen(2); }
@@ -490,46 +501,46 @@
 
   // ─── Calibration ─────────────────────────────────────────────────────────────
 
-  function setupCalibration() {
-    const grid = 3, points = [];
-    for (let i = 0; i < grid; i++)
-      for (let j = 0; j < grid; j++)
-        points.push([i / (grid - 1), j / (grid - 1)]);
+  // function setupCalibration() {
+  //   const grid = 3, points = [];
+  //   for (let i = 0; i < grid; i++)
+  //     for (let j = 0; j < grid; j++)
+  //       points.push([i / (grid - 1), j / (grid - 1)]);
 
-    let index = 0, sampleCount = 0;
-    const maxSamples = 5;
+  //   let index = 0, sampleCount = 0;
+  //   const maxSamples = 5;
 
-    const calDot = document.createElement('div');
-    Object.assign(calDot.style, {
-      position: 'fixed', width: '40px', height: '40px', borderRadius: '50%',
-      background: settings.glowColor, zIndex: '2147483647', cursor: 'pointer',
-      transition: 'all 0.2s ease', boxShadow: `0 0 16px 4px ${settings.glowColor}`,
-    });
-    const calLabel = document.createElement('div');
-    Object.assign(calLabel.style, {
-      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-      color: 'white', fontFamily: 'monospace', fontSize: '14px', zIndex: '2147483647',
-      background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px', pointerEvents: 'none',
-    });
-    calLabel.textContent = 'Click each dot to calibrate (5 clicks each)';
-    document.documentElement.appendChild(calLabel);
-    document.documentElement.appendChild(calDot);
+  //   const calDot = document.createElement('div');
+  //   Object.assign(calDot.style, {
+  //     position: 'fixed', width: '40px', height: '40px', borderRadius: '50%',
+  //     background: settings.glowColor, zIndex: '2147483647', cursor: 'pointer',
+  //     transition: 'all 0.2s ease', boxShadow: `0 0 16px 4px ${settings.glowColor}`,
+  //   });
+  //   const calLabel = document.createElement('div');
+  //   Object.assign(calLabel.style, {
+  //     position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+  //     color: 'white', fontFamily: 'monospace', fontSize: '14px', zIndex: '2147483647',
+  //     background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px', pointerEvents: 'none',
+  //   });
+  //   calLabel.textContent = 'Click each dot to calibrate (5 clicks each)';
+  //   document.documentElement.appendChild(calLabel);
+  //   document.documentElement.appendChild(calDot);
 
-    function showNext() {
-      if (index >= points.length) { calDot.remove(); calLabel.remove(); showNotification('✅ Calibration complete!'); return; }
-      const [px, py] = points[index];
-      calDot.style.left = (px * (window.innerWidth - 40)) + 'px';
-      calDot.style.top  = (py * (window.innerHeight - 40)) + 'px';
-      sampleCount = 0;
-    }
-    calDot.addEventListener('click', () => {
-      sampleCount++;
-      calDot.style.background = sampleCount % 2 === 0 ? settings.glowColor : '#fff';
-      calLabel.textContent = `Point ${index + 1}/${points.length} — click ${maxSamples - sampleCount} more`;
-      if (sampleCount >= maxSamples) { index++; showNext(); }
-    });
-    showNext();
-  }
+  //   function showNext() {
+  //     if (index >= points.length) { calDot.remove(); calLabel.remove(); showNotification('✅ Calibration complete!'); return; }
+  //     const [px, py] = points[index];
+  //     calDot.style.left = (px * (window.innerWidth - 40)) + 'px';
+  //     calDot.style.top  = (py * (window.innerHeight - 40)) + 'px';
+  //     sampleCount = 0;
+  //   }
+  //   calDot.addEventListener('click', () => {
+  //     sampleCount++;
+  //     calDot.style.background = sampleCount % 2 === 0 ? settings.glowColor : '#fff';
+  //     calLabel.textContent = `Point ${index + 1}/${points.length} — click ${maxSamples - sampleCount} more`;
+  //     if (sampleCount >= maxSamples) { index++; showNext(); }
+  //   });
+  //   showNext();
+  // }
 
   // ─── Notification ─────────────────────────────────────────────────────────────
 
@@ -595,15 +606,26 @@
       setupCalibration();
     }
     if (msg.type === 'NIGHT_SHIFT_UPDATE') {
-      settings = { ...settings, ...msg };
+      const { nightShift, nightShiftStart, nightShiftEnd, nightShiftWarmth, nightShiftBrightness } = msg;
+      if (nightShift           !== undefined) settings.nightShift           = nightShift;
+      if (nightShiftStart      !== undefined) settings.nightShiftStart      = nightShiftStart;
+      if (nightShiftEnd        !== undefined) settings.nightShiftEnd        = nightShiftEnd;
+      if (nightShiftWarmth     !== undefined) settings.nightShiftWarmth     = nightShiftWarmth;
+      if (nightShiftBrightness !== undefined) settings.nightShiftBrightness = nightShiftBrightness;
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
   });
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
 
-  chrome.storage.local.get(['gazeSettings'], (result) => {
+  chrome.storage.local.get(['gazeSettings', 'gazelink_drowsy'], (result) => {
     if (result.gazeSettings) settings = { ...settings, ...result.gazeSettings };
+
+    if (result.gazelink_drowsy) {
+      drowsyCount = result.gazelink_drowsy.count ?? 0;
+      currentBreakStage = result.gazelink_drowsy.stage ?? 0;
+    }
+
     if (settings.enabled) { connectWS(); showHUD(); }
     if (settings.nightShift) startNightShiftWatch();
   });

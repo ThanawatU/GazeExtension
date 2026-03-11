@@ -81,6 +81,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
+// ── Clear drowsy state when Chrome closes ─────────────────────────────────────
+
+// Fires when the service worker is about to be shut down (browser closing, extension reload)
+chrome.runtime.onSuspend.addListener(() => {
+    chrome.storage.local.remove('gazelink_drowsy');
+});
+
+// Also fires when the last Chrome window closes (covers normal browser quit)
+chrome.windows.onRemoved.addListener(() => {
+    chrome.windows.getAll((windows) => {
+        if (windows.length === 0) {
+            chrome.storage.local.remove('gazelink_drowsy');
+        }
+    });
+});
+
 // ── Send to active tab only ───────────────────────────────────────────────────
 
 function sendToActiveTab(message) {
