@@ -57,13 +57,6 @@ class App(QtWidgets.QMainWindow):
         self.frame_count = 0
         self.last_distance_cm = None
 
-        # For optimization send_gaze
-        self.last_sent_pog = None
-
-        # For optimization frame and distance calculation
-        self.frame_count = 0
-        self.last_distance_cm = None
-
         # Connect to the WebSocket server in a background thread
         start_bridge()
 
@@ -383,14 +376,23 @@ class App(QtWidgets.QMainWindow):
 
     def update_webcam(self):
         ret, frame = self.cap.read()
-        if ret:
+        if not ret or frame is None or frame.size == 0:
+            return
 
+        # Drowsy check (always runs, independent of gaze tracking)
+        try:
+            is_drowsy, l_blink, r_blink = self.drowsiness.process_frame(frame)
+        except Exception:
+            is_drowsy = False
+
+        try:
             # Process the frame with WebEyeTrack
             status, gaze_result, detection = self.wet.process_frame(frame)
+        except (cv2.error, Exception):
+            # Empty eye patch / bad crop on this frame — skip silently
+            status, gaze_result, detection = None, None, None
 
-            # Drowsy check
-            is_drowsy, l_blink, r_blink = self.drowsiness.process_frame(frame)
-
+        if gaze_result is not None:
             if self.show_facial_landmarks and detection:
                 frame = vis.draw_landmarks_on_image(frame, detection)
 
@@ -398,31 +400,29 @@ class App(QtWidgets.QMainWindow):
                 # Show the eye patch if requested
                 if self.show_eye_patch:
                     eye_patch = gaze_result.eye_patch
-                    if eye_patch is not None:
+                    if eye_patch is not None and eye_patch.size > 0:
                         eye_patch = cv2.cvtColor(eye_patch, cv2.COLOR_BGR2RGB)
                         h, w, ch = eye_patch.shape
                         bytes_per_line = ch * w
                         qeye_patch = QtGui.QImage(eye_patch.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
                         self.eye_patch_label.setPixmap(QtGui.QPixmap.fromImage(qeye_patch))
-             
+
                 # If the prediction is outside of [-0.4, 0.4], clip it
                 bound = 0.5
                 y_margin = 0.05
                 gaze_result.norm_pog[0] = np.clip(gaze_result.norm_pog[0], -bound, bound)
                 gaze_result.norm_pog[1] = np.clip(gaze_result.norm_pog[1], -(bound-y_margin), bound-y_margin)
 
-                # Make distance calculate every 10 frames instead of every frame for optimization (since distance calculation is expensive)
+                # Make distance calculate every 10 frames instead of every frame for optimization
                 self.frame_count += 1
-                distance_cm = self.last_distance_cm 
+                distance_cm = self.last_distance_cm
 
-                if detection and self.frame_count % 10 == 0:  # only recalculate every 10 frames
+                if detection and self.frame_count % 10 == 0:
                     landmarks = detection.face_landmarks
                     self.last_distance_cm = calculate_distance(landmarks)
                     distance_cm = self.last_distance_cm
 
-                
                 # Update the gaze dot position
-                # print("test gaze result:", gaze_result.norm_pog, "state:", gaze_result.gaze_state)
                 send_gaze(gaze_result, distance_cm, drowsy=is_drowsy)
                 gaze_x, gaze_y = gaze_result.norm_pog
                 self.gaze_dot_updated.emit(gaze_result.gaze_state, gaze_x, gaze_y)
@@ -437,14 +437,14 @@ class App(QtWidgets.QMainWindow):
                 # Store the latest gaze result
                 self.latest_gaze_result = gaze_result
 
-            # Show the frame
-            if self.show_webcam:
-                frame = imutils.resize(frame, width=WEBCAM_WIDTH)  # Resize to fit QLabel
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = frame.shape
-                bytes_per_line = ch * w
-                qframe = QtGui.QImage(frame.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
-                self.webcam_label.setPixmap(QtGui.QPixmap.fromImage(qframe))
+        # Show the frame (always, even if gaze processing failed)
+        if self.show_webcam:
+            frame = imutils.resize(frame, width=WEBCAM_WIDTH)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = frame.shape
+            bytes_per_line = ch * w
+            qframe = QtGui.QImage(frame.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+            self.webcam_label.setPixmap(QtGui.QPixmap.fromImage(qframe))
 
     def closeEvent(self, event):
         self.cap.release()
