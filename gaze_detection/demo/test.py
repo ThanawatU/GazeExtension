@@ -32,13 +32,12 @@ SCREEN_WIDTH_MM = 530
 SCREEN_HEIGHT_MM = 300
 
 
-def test_single_image(image_path, save_output=True):
+def test_single_image(image_path):
     """
     Test WebEyeTrack with a single image
 
     Args:
         image_path (str): Path to the image file
-        save_output (bool): Whether to save the output image with landmarks
 
     Returns:
         tuple: (gaze_result, detection, success)
@@ -118,32 +117,32 @@ def test_single_image(image_path, save_output=True):
 
                 # Show important facial landmarks (corrected MediaPipe indices)
                 important_indices = {
-                    # Nose
+                    # nose
                     "nose_tip": 4,
                     "nose_bridge": 6,
-                    # Left eye region
-                    "left_eye_left_corner": 33,  # Left corner of left eye
-                    "left_eye_right_corner": 133,  # Right corner of left eye
-                    "left_eye_center": 468,  # Center of left eye (from blendshapes)
-                    # Right eye region
-                    "right_eye_left_corner": 362,  # Left corner of right eye
-                    "right_eye_right_corner": 263,  # Right corner of right eye
-                    "right_eye_center": 473,  # Center of right eye (from blendshapes)
-                    # Eyebrows
+                    # left eye region
+                    "left_eye_left_corner": 33,  # left corner of left eye
+                    "left_eye_right_corner": 133,  # right corner of left eye
+                    "left_eye_center": 468,  # center of left eye (from blendshapes)
+                    # right eye region
+                    "right_eye_left_corner": 362,  # left corner of right eye
+                    "right_eye_right_corner": 263,  # right corner of right eye
+                    "right_eye_center": 473,  # center of right eye (from blendshapes)
+                    # eyebrows
                     "left_eyebrow_inner": 46,
                     "left_eyebrow_outer": 70,
                     "right_eyebrow_inner": 276,
                     "right_eyebrow_outer": 300,
-                    # Mouth
+                    # mouth
                     "mouth_left": 61,
                     "mouth_right": 291,
                     "mouth_top": 13,
                     "mouth_bottom": 14,
-                    # Chin and cheeks
+                    # chin and cheeks
                     "chin": 152,
                     "left_cheek": 117,
                     "right_cheek": 347,
-                    # Jawline
+                    # jawline
                     "jaw": 199,
                 }
 
@@ -175,28 +174,11 @@ def test_single_image(image_path, save_output=True):
         else:
             print("  - No face landmarks found")
 
-    # Save output image with landmarks
-    if save_output and detection is not None and status == TrackingStatus.SUCCESS:
-        try:
-            from webeyetrack import vis
-
-            output_frame = vis.draw_landmarks_on_image(frame, detection)
-
-            # Save output
-            import os
-
-            base, ext = os.path.splitext(image_path)
-            output_path = f"{base}_output{ext}"
-            cv2.imwrite(output_path, output_frame)
-            print(f"\n✅ Saved output image with landmarks: {output_path}")
-        except Exception as e:
-            print(f"\n❌ Failed to save output image: {e}")
-
     print(f"\n{'='*50}")
     if success:
-        print(f"✅ Test completed successfully!")
+        print(f" Test completed successfully!")
     else:
-        print(f"❌ Test failed!")
+        print(f" Test failed!")
     print(f"{'='*50}")
 
     return gaze_result, detection, success
@@ -209,7 +191,7 @@ def main():
     test_image_folder = CWD / "test_image"
 
     if not test_image_folder.exists():
-        print(f"❌ Folder not found: {test_image_folder}")
+        print(f" Folder not found: {test_image_folder}")
         print("Please create a 'test_image' folder and add images to test")
         return
 
@@ -223,7 +205,7 @@ def main():
         image_files.extend(glob.glob(str(test_image_folder / ext)))
 
     if not image_files:
-        print(f"❌ No image files found in: {test_image_folder}")
+        print(f" No image files found in: {test_image_folder}")
         print("Please add .jpg, .jpeg, .png, or .bmp files to test")
         return
 
@@ -234,7 +216,7 @@ def main():
     successful_tests = 0
 
     for img_path in sorted(image_files):
-        gaze, detection, success = test_single_image(str(img_path), save_output=True)
+        gaze, detection, success = test_single_image(str(img_path))
         results.append({"path": img_path, "success": success, "gaze": gaze})
         if success:
             successful_tests += 1
