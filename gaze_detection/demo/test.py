@@ -1,16 +1,29 @@
-import pathlib
+###########################import libary######################################
+import pathlib  # ใช้จัดการ path (เปิดรูป test_image/1.jpg)
 
-import cv2
-import numpy as np
-import yaml
+import cv2  # OpenCV สำหรับอ่านและประมวลผลรูปภาพ
+import numpy as np  # เอาไว้คิดเลข
+import yaml  # อ่านไฟล์ configuration เพราะ เป็น .yaml
 
-from webeyetrack import WebEyeTrack, WebEyeTrackConfig
-from webeyetrack.data_protocols import TrackingStatus
+from webeyetrack import WebEyeTrack, WebEyeTrackConfig  # คลาสหลักสำหรับการตรวจจับการมอง
+from webeyetrack.data_protocols import (
+    TrackingStatus,
+)  # Enum สำหรับสถานะการตรวจจับ (SUCCESS, FAILURE)
 
-# Load configuration
+#################################################################
+
+
+# Load ไฟล์ configuration
 CWD = pathlib.Path(__file__).parent.resolve()
+# __file__ คือ path ปัจจุบัน(test.py)
+# .parent คือ ถอยไป 1 (../)
+# .resolve() แก้ไขพาธให้เป็น absolute path = path เต็ม ตั้งแต่ /Users/jengcharat/
+
 with open(CWD / "config.yml", "r") as f:
-    config = yaml.safe_load(f)
+    # CWD / "config.yml": รวมพาธให้เป็น /path/to/demo/config.yml
+    config = yaml.safe_load(
+        f
+    )  # yaml.safe_load(): อ่านและแปลง YAML เป็น dictionary Python
 
 # Screen dimensions (from constants.py)
 SCREEN_WIDTH_PX = 1920
@@ -28,19 +41,29 @@ def test_single_image(image_path, save_output=True):
         save_output (bool): Whether to save the output image with landmarks
 
     Returns:
-        tuple: (gaze_result, detection)
+        tuple: (gaze_result, detection, success)
     """
+    print(f"\n{'='*50}")
     print(f"Testing image: {image_path}")
+    print(f"{'='*50}")
 
     # Read image
-    frame = cv2.imread(image_path)
-    if frame is None:
-        print(f"Failed to read image: {image_path}")
-        return None, None
+    frame = cv2.imread(
+        image_path
+    )  # อ่านฟล์รูปภาพ คืนค่า numpy array (height, width, channels)
+    if frame is None:  # ถ้า None แปลว่าอ่านไม่สำเร็จ
+        print(f"❌ Failed to read image: {image_path}")
+        return None, None, False
 
-    print(f"Image size: {frame.shape}")
+    print(f"Image size: {frame.shape}")  # frame.shape() แสดงขนาดรูป
 
     # Initialize WebEyeTrack
+    #    สร้าง config object ด้วยขนาดหน้าจอ (พิกเซลและเซนติเมตร)
+    #    SCREEN_WIDTH_MM / 10: แปลง mm เป็น cm
+    #    verbose=config["verbose"]: เปิด/ปิดการแสดง log ตาม config
+    #    WebEyeTrack(config): สร้าง pipeline สำหรับตรวจจับการมอง
+
+    # wet = web eye track
     wet = WebEyeTrack(
         WebEyeTrackConfig(
             screen_px_dimensions=(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX),
@@ -52,10 +75,17 @@ def test_single_image(image_path, save_output=True):
     # Process frame
     print("Processing image...")
     status, gaze_result, detection = wet.process_frame(frame)
+    # process_frame(): รับรูปภาพและคืนค่า:
 
-    # Display results
+    # status: สถานะการตรวจจับ (TrackingStatus.SUCCESS, FAILURE, ฯลฯ)
+    # gaze_result: ข้อมูลการมอง (norm_pog, gaze_state, durations)
+    # detection: ข้อมูลการตรวจจับใบหน้า (face_landmarks)
+
+    ########################## Display results ##########################################
     print("\n=== Test Results ===")
     print(f"Status: {status}")
+
+    success = False
 
     if gaze_result is not None:
         print(f"\nGaze Result:")
@@ -67,6 +97,7 @@ def test_single_image(image_path, save_output=True):
             f"  - Eye Patch Shape: {gaze_result.eye_patch.shape if gaze_result.eye_patch is not None else 'None'}"
         )
         print(f"  - Durations: {gaze_result.durations}")
+        success = True
 
     if detection is not None:
         print(f"\nFace Detection:")
@@ -85,18 +116,35 @@ def test_single_image(image_path, save_output=True):
                     landmarks = detection.face_landmarks
                     print(f"  - Landmarks count: {len(landmarks)}")
 
-                # Show important facial landmarks
+                # Show important facial landmarks (corrected MediaPipe indices)
                 important_indices = {
+                    # Nose
                     "nose_tip": 4,
-                    "left_eye_center": 33,
-                    "right_eye_center": 263,
-                    "left_eye_outer": 33,
-                    "right_eye_outer": 263,
+                    "nose_bridge": 6,
+                    # Left eye region
+                    "left_eye_left_corner": 33,  # Left corner of left eye
+                    "left_eye_right_corner": 133,  # Right corner of left eye
+                    "left_eye_center": 468,  # Center of left eye (from blendshapes)
+                    # Right eye region
+                    "right_eye_left_corner": 362,  # Left corner of right eye
+                    "right_eye_right_corner": 263,  # Right corner of right eye
+                    "right_eye_center": 473,  # Center of right eye (from blendshapes)
+                    # Eyebrows
+                    "left_eyebrow_inner": 46,
+                    "left_eyebrow_outer": 70,
+                    "right_eyebrow_inner": 276,
+                    "right_eyebrow_outer": 300,
+                    # Mouth
                     "mouth_left": 61,
                     "mouth_right": 291,
+                    "mouth_top": 13,
+                    "mouth_bottom": 14,
+                    # Chin and cheeks
                     "chin": 152,
-                    "left_eyebrow": 70,
-                    "right_eyebrow": 300,
+                    "left_cheek": 117,
+                    "right_cheek": 347,
+                    # Jawline
+                    "jaw": 199,
                 }
 
                 print("\n  - Important facial landmarks:")
@@ -140,147 +188,87 @@ def test_single_image(image_path, save_output=True):
             base, ext = os.path.splitext(image_path)
             output_path = f"{base}_output{ext}"
             cv2.imwrite(output_path, output_frame)
-            print(f"\nSaved output image with landmarks: {output_path}")
+            print(f"\n✅ Saved output image with landmarks: {output_path}")
         except Exception as e:
-            print(f"\nFailed to save output image: {e}")
+            print(f"\n❌ Failed to save output image: {e}")
 
-    return gaze_result, detection
+    print(f"\n{'='*50}")
+    if success:
+        print(f"✅ Test completed successfully!")
+    else:
+        print(f"❌ Test failed!")
+    print(f"{'='*50}")
 
-
-def test_multiple_images(image_folder):
-    """
-    Test WebEyeTrack with multiple images in a folder
-
-    Args:
-        image_folder (str): Path to folder containing images
-
-    Returns:
-        list: Results for each image
-    """
-    import glob
-    import os
-
-    # Find all image files
-    image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.bmp"]
-    image_files = []
-
-    for ext in image_extensions:
-        image_files.extend(glob.glob(os.path.join(image_folder, ext)))
-
-    if not image_files:
-        print(f"No image files found in: {image_folder}")
-        return []
-
-    print(f"Found {len(image_files)} images")
-
-    # Initialize WebEyeTrack
-    print("\nInitializing WebEyeTrack...")
-    wet = WebEyeTrack(
-        WebEyeTrackConfig(
-            screen_px_dimensions=(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX),
-            screen_cm_dimensions=(SCREEN_WIDTH_MM / 10, SCREEN_HEIGHT_MM / 10),
-            verbose=config["verbose"],
-        )
-    )
-
-    # Test each image
-    results = []
-    successful_gaze = []
-
-    for img_path in sorted(image_files):
-        print(f"\nTesting: {os.path.basename(img_path)}")
-
-        frame = cv2.imread(img_path)
-        if frame is None:
-            print(f"  ❌ Failed to read image")
-            results.append(
-                {"path": img_path, "success": False, "status": None, "gaze": None}
-            )
-            continue
-
-        status, gaze_result, detection = wet.process_frame(frame)
-        success = status == TrackingStatus.SUCCESS and gaze_result is not None
-
-        if success:
-            print(f"  ✅ Status: {status}")
-            print(f"     Gaze State: {gaze_result.gaze_state}")
-            print(
-                f"     Normalized POG: ({gaze_result.norm_pog[0]:.4f}, {gaze_result.norm_pog[1]:.4f})"
-            )
-            successful_gaze.append(gaze_result)
-        else:
-            print(f"  ❌ Status: {status}")
-
-        results.append(
-            {
-                "path": img_path,
-                "success": success,
-                "status": status,
-                "gaze": gaze_result,
-            }
-        )
-
-    # Summary
-    print("\n" + "=" * 50)
-    print("Test Summary:")
-    print("=" * 50)
-
-    successful = [r for r in results if r["success"]]
-    failed = [r for r in results if not r["success"]]
-
-    print(f"Successful: {len(successful)} images")
-    print(f"Failed: {len(failed)} images")
-
-    if failed:
-        print("\nFailed images:")
-        for r in failed:
-            print(f"  - {os.path.basename(r['path'])}: {r['status']}")
-
-    # Show average gaze position if there are successful results
-    if successful_gaze:
-        pog_x = [g.norm_pog[0] for g in successful_gaze]
-        pog_y = [g.norm_pog[1] for g in successful_gaze]
-
-        print(f"\nAverage Normalized POG:")
-        print(f"  X: {np.mean(pog_x):.4f} (±{np.std(pog_x):.4f})")
-        print(f"  Y: {np.mean(pog_y):.4f} (±{np.std(pog_y):.4f})")
-
-    return results
+    return gaze_result, detection, success
 
 
 def main():
     """Main function to run tests"""
 
-    # Test single image
-    print("=== Test Single Image ===")
-    test_image_path = CWD / "test_image" / "1.jpg"
-
-    if test_image_path.exists():
-        gaze, detection = test_single_image(str(test_image_path))
-        if gaze is not None:
-            print("\n✅ Test successful!")
-        else:
-            print("\n❌ Test failed")
-    else:
-        print(f"File not found: {test_image_path}")
-        print("Please make sure the image file exists in test_image/ folder")
-
-    # Optional: Test multiple images if there are more
-    print("\n\n=== Test Multiple Images (if available) ===")
+    # หารูปภาพทั้งหมดในโฟลเดอร์ test_image
     test_image_folder = CWD / "test_image"
-    if test_image_folder.exists():
-        import glob
 
-        image_files = glob.glob(str(test_image_folder / "*.jpg")) + glob.glob(
-            str(test_image_folder / "*.png")
+    if not test_image_folder.exists():
+        print(f"❌ Folder not found: {test_image_folder}")
+        print("Please create a 'test_image' folder and add images to test")
+        return
+
+    # ค้นหาไฟล์รูปภาพทั้งหมด
+    import glob
+
+    image_files = []
+    image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.bmp"]
+
+    for ext in image_extensions:
+        image_files.extend(glob.glob(str(test_image_folder / ext)))
+
+    if not image_files:
+        print(f"❌ No image files found in: {test_image_folder}")
+        print("Please add .jpg, .jpeg, .png, or .bmp files to test")
+        return
+
+    print(f"Found {len(image_files)} image(s) to test")
+
+    # ทดสอบแต่ละรูปโดยเรียก test_single_image ซ้ำๆ
+    results = []
+    successful_tests = 0
+
+    for img_path in sorted(image_files):
+        gaze, detection, success = test_single_image(str(img_path), save_output=True)
+        results.append({"path": img_path, "success": success, "gaze": gaze})
+        if success:
+            successful_tests += 1
+
+    # สรุปผล
+    print("\n" + "=" * 60)
+    print("FINAL SUMMARY")
+    print("=" * 60)
+    print(f"Total images tested: {len(image_files)}")
+    print(f"Successful: {successful_tests}")
+    print(f"Failed: {len(image_files) - successful_tests}")
+
+    # แสดงรายการรูปที่ล้มเหลว
+    failed_tests = [r for r in results if not r["success"]]
+    if failed_tests:
+        print("\nFailed images:")
+        for r in failed_tests:
+            print(f"  - {r['path'].name}")
+
+    # แสดงค่าเฉลี่ย gaze position ถ้ามีข้อมูลสำเร็จ
+    successful_gaze = [
+        r["gaze"] for r in results if r["success"] and r["gaze"] is not None
+    ]
+    if successful_gaze:
+        pog_x = [g.norm_pog[0] for g in successful_gaze]
+        pog_y = [g.norm_pog[1] for g in successful_gaze]
+
+        print(
+            f"\nAverage Normalized POG (from {len(successful_gaze)} successful tests):"
         )
+        print(f"  X: {np.mean(pog_x):.4f} (±{np.std(pog_x):.4f})")
+        print(f"  Y: {np.mean(pog_y):.4f} (±{np.std(pog_y):.4f})")
 
-        if len(image_files) > 1:
-            test_multiple_images(str(test_image_folder))
-        else:
-            print("Only one image found, skipping multiple image test")
-    else:
-        print(f"Folder not found: {test_image_folder}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
