@@ -31,6 +31,51 @@ SCREEN_HEIGHT_PX = 1080
 SCREEN_WIDTH_MM = 530
 SCREEN_HEIGHT_MM = 300
 
+# Expected results for each test image
+EXPECTED_RESULTS = {
+    "1.jpg": {
+        "gaze_state": "open",
+        "norm_pog_x": 0.05,
+        "norm_pog_y": 0.05,
+        "tolerance": 0.05,
+        "description": "Looking straight ahead",
+    },
+    "2.jpg": {
+        "gaze_state": "open",
+        "norm_pog_x": 0.10,
+        "norm_pog_y": -0.15,
+        "tolerance": 0.05,
+        "description": "Looking slightly right and down",
+    },
+    "3.jpg": {
+        "gaze_state": "open",
+        "norm_pog_x": 0.00,
+        "norm_pog_y": 0.00,
+        "tolerance": 0.05,
+        "description": "Looking straight ahead",
+    },
+    # Add more expected results as needed
+}
+
+
+def compare_with_expected(result_name, actual_value, expected_value, tolerance):
+    """
+    Compare actual value with expected value within tolerance
+
+    Args:
+        result_name (str): Name of the result being compared
+        actual_value (float): Actual value from test
+        expected_value (float): Expected value
+        tolerance (float): Allowed difference
+
+    Returns:
+        tuple: (is_match, difference, status_icon)
+    """
+    difference = abs(actual_value - expected_value)
+    is_match = difference <= tolerance
+    status_icon = "✅" if is_match else "❌"
+    return is_match, difference, status_icon
+
 
 def test_single_image(image_path):
     """
@@ -40,7 +85,7 @@ def test_single_image(image_path):
         image_path (str): Path to the image file
 
     Returns:
-        tuple: (gaze_result, detection, success)
+        tuple: (gaze_result, detection, success, test_passed)
     """
     print(f"\n{'='*50}")
     print(f"Testing image: {image_path}")
@@ -52,7 +97,7 @@ def test_single_image(image_path):
     )  # อ่านฟล์รูปภาพ คืนค่า numpy array (height, width, channels)
     if frame is None:  # ถ้า None แปลว่าอ่านไม่สำเร็จ
         print(f"❌ Failed to read image: {image_path}")
-        return None, None, False
+        return None, None, False, False
 
     print(f"Image size: {frame.shape}")  # frame.shape() แสดงขนาดรูป
 
@@ -85,9 +130,26 @@ def test_single_image(image_path):
     print(f"Status: {status}")
 
     success = False
+    test_passed = False
+
+    # Get expected results for this image
+    filename = pathlib.Path(image_path).name
+    expected = EXPECTED_RESULTS.get(filename)
+
+    if expected:
+        print(f"\n--- Expected Results ---")
+        print(f"  Description: {expected.get('description', 'No description')}")
+        print(f"  Gaze State: {expected.get('gaze_state', 'N/A')}")
+        print(
+            f"  Expected POG: ({expected.get('norm_pog_x', 0):.4f}, {expected.get('norm_pog_y', 0):.4f})"
+        )
+        print(f"  Tolerance: ±{expected.get('tolerance', 0.05)}")
+    else:
+        print(f"\n--- No expected results defined for {filename} ---")
 
     if gaze_result is not None:
-        print(f"\nGaze Result:")
+        print(f"\n--- Actual Results ---")
+        print(f"Gaze Result:")
         print(f"  - Gaze State: {gaze_result.gaze_state}")
         print(
             f"  - Normalized POG: ({gaze_result.norm_pog[0]:.4f}, {gaze_result.norm_pog[1]:.4f})"
@@ -97,6 +159,58 @@ def test_single_image(image_path):
         )
         print(f"  - Durations: {gaze_result.durations}")
         success = True
+
+        # Compare with expected results if available
+        if expected:
+            print(f"\n--- Comparison with Expected ---")
+
+            # Compare gaze state
+            expected_state = expected.get("gaze_state")
+            if expected_state:
+                state_match = gaze_result.gaze_state == expected_state
+                state_icon = "✅" if state_match else "❌"
+                print(
+                    f"  Gaze State: {state_icon} Actual='{gaze_result.gaze_state}', Expected='{expected_state}'"
+                )
+                test_passed = state_match
+
+            # Compare POG X
+            tolerance = expected.get("tolerance", 0.05)
+            expected_x = expected.get("norm_pog_x")
+            if expected_x is not None:
+                x_match, x_diff, x_icon = compare_with_expected(
+                    "POG X", gaze_result.norm_pog[0], expected_x, tolerance
+                )
+                print(
+                    f"  POG X: {x_icon} Actual={gaze_result.norm_pog[0]:.4f}, Expected={expected_x:.4f}, Diff={x_diff:.4f} (tolerance={tolerance})"
+                )
+                if not x_match:
+                    test_passed = False
+                elif test_passed is False:
+                    test_passed = x_match
+                else:
+                    test_passed = True
+
+            # Compare POG Y
+            expected_y = expected.get("norm_pog_y")
+            if expected_y is not None:
+                y_match, y_diff, y_icon = compare_with_expected(
+                    "POG Y", gaze_result.norm_pog[1], expected_y, tolerance
+                )
+                print(
+                    f"  POG Y: {y_icon} Actual={gaze_result.norm_pog[1]:.4f}, Expected={expected_y:.4f}, Diff={y_diff:.4f} (tolerance={tolerance})"
+                )
+                if not y_match:
+                    test_passed = False
+                elif test_passed is False:
+                    test_passed = y_match
+                else:
+                    test_passed = True
+
+            # Overall test result
+            print(f"\n  Overall: {'✅ PASSED' if test_passed else '❌ FAILED'}")
+        else:
+            test_passed = True  # No expected results, consider passed
 
     if detection is not None:
         print(f"\nFace Detection:")
@@ -176,12 +290,18 @@ def test_single_image(image_path):
 
     print(f"\n{'='*50}")
     if success:
-        print(f" Test completed successfully!")
+        if expected:
+            if test_passed:
+                print(f"✅ Test completed successfully! (Matches expected)")
+            else:
+                print(f"⚠️ Test completed but does NOT match expected results!")
+        else:
+            print(f"✅ Test completed successfully! (No expected results defined)")
     else:
-        print(f" Test failed!")
+        print(f"❌ Test failed!")
     print(f"{'='*50}")
 
-    return gaze_result, detection, success
+    return gaze_result, detection, success, test_passed
 
 
 def main():
@@ -211,30 +331,77 @@ def main():
 
     print(f"Found {len(image_files)} image(s) to test")
 
+    # Display expected results summary
+    print("\n--- Expected Results Summary ---")
+    for img_path in sorted(image_files):
+        # Convert string to Path object if needed
+        if isinstance(img_path, str):
+            img_path = pathlib.Path(img_path)
+        filename = img_path.name
+        if filename in EXPECTED_RESULTS:
+            exp = EXPECTED_RESULTS[filename]
+            print(f"  {filename}: {exp.get('description', 'No description')}")
+            print(
+                f"    Expected: ({exp.get('norm_pog_x', 0):.4f}, {exp.get('norm_pog_y', 0):.4f}) ±{exp.get('tolerance', 0.05)}"
+            )
+        else:
+            print(f"  {filename}: No expected results defined")
+    print("=" * 60)
+
     # ทดสอบแต่ละรูปโดยเรียก test_single_image ซ้ำๆ
     results = []
     successful_tests = 0
+    passed_tests = 0
 
     for img_path in sorted(image_files):
-        gaze, detection, success = test_single_image(str(img_path))
-        results.append({"path": img_path, "success": success, "gaze": gaze})
+        gaze, detection, success, test_passed = test_single_image(str(img_path))
+        results.append(
+            {
+                "path": img_path,
+                "success": success,
+                "gaze": gaze,
+                "test_passed": test_passed,
+            }
+        )
         if success:
             successful_tests += 1
+        if test_passed:
+            passed_tests += 1
 
     # สรุปผล
     print("\n" + "=" * 60)
     print("FINAL SUMMARY")
     print("=" * 60)
     print(f"Total images tested: {len(image_files)}")
-    print(f"Successful: {successful_tests}")
-    print(f"Failed: {len(image_files) - successful_tests}")
+    print(f"Successfully processed: {successful_tests}")
+    print(f"Failed to process: {len(image_files) - successful_tests}")
+    print(f"Tests passed (match expected): {passed_tests}")
+    print(f"Tests failed (mismatch expected): {successful_tests - passed_tests}")
 
     # แสดงรายการรูปที่ล้มเหลว
     failed_tests = [r for r in results if not r["success"]]
     if failed_tests:
-        print("\nFailed images:")
+        print("\nFailed to process images:")
         for r in failed_tests:
-            print(f"  - {r['path'].name}")
+            # Convert to Path object if string
+            path = (
+                r["path"]
+                if isinstance(r["path"], pathlib.Path)
+                else pathlib.Path(r["path"])
+            )
+            print(f"  - {path.name}")
+
+    # แสดงรายการรูปที่ทดสอบไม่ผ่าน (ไม่ตรงกับ expected)
+    mismatch_tests = [r for r in results if r["success"] and not r["test_passed"]]
+    if mismatch_tests:
+        print("\nTests that passed processing but didn't match expected results:")
+        for r in mismatch_tests:
+            path = (
+                r["path"]
+                if isinstance(r["path"], pathlib.Path)
+                else pathlib.Path(r["path"])
+            )
+            print(f"  - {path.name}")
 
     # แสดงค่าเฉลี่ย gaze position ถ้ามีข้อมูลสำเร็จ
     successful_gaze = [
