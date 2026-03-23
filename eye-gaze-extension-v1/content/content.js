@@ -247,6 +247,35 @@
         else { handleDistanceEffects(currentDistance); showNotification(`🔍 Font scaled for ${currentDistance.toFixed(0)}cm`); }
       }, 1000);
     }
+
+
+
+
+    // ไม่พูดถ้าเป็น Alt (เพราะ Alt มี function ของมันอยู่)
+    if (e.key === 'Alt') return;
+    if (!settings.enabled) return;
+
+    // ป้องกันการพูดซ้ำถ้ากดค้าง
+    const currentKey = e.key;
+    if (lastSpokenKey === currentKey) {
+      if (keySpeechTimeout) clearTimeout(keySpeechTimeout);
+      keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 200);
+      return;
+    }
+
+    lastSpokenKey = currentKey;
+    keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 500);
+
+    // อ่านเสียง - จะยกเลิกเสียงเก่าและพูดใหม่ทันที
+    const thaiName = getKeyNameThai(e.key, e.code);
+    speakThai(thaiName);
+
+
+
+
+
+
+
   });
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Alt') { clearTimeout(altHoldTimer); altHoldTimer = null; altHoldTriggered = false; }
@@ -721,7 +750,109 @@
 
 
 
+  ////////////////////////////////////////////////////////////////////
+  // ─── Keyboard speech (Thai voice) ──────────────────────────────────────────────
 
+  let lastSpokenKey = null;
+  let keySpeechTimeout = null;
+
+  function speakThai(text) {
+    if (!settings.enabled) return;
+
+    // ยกเลิกการพูดที่กำลังดำเนินอยู่ทันที
+    speechSynthesis.cancel();
+
+    // สร้าง utterance ใหม่
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'th-TH';
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.8;
+
+    // พยายามเลือกเสียงภาษาไทย
+    let voices = [];
+    const setVoice = () => {
+      voices = speechSynthesis.getVoices();
+      const thaiVoice = voices.find(voice =>
+        voice.lang === 'th-TH' ||
+        voice.lang === 'th' ||
+        voice.name.includes('Thai') ||
+        voice.name.includes('Kanya')
+      );
+      if (thaiVoice) utterance.voice = thaiVoice;
+      speechSynthesis.speak(utterance);
+    };
+
+    // ถ้า voices โหลดแล้ว ให้ใช้เลย ถ้ายังให้รอ
+    if (speechSynthesis.getVoices().length > 0) {
+      setVoice();
+    } else {
+      speechSynthesis.onvoiceschanged = setVoice;
+    }
+  }
+
+  // แปลงชื่อคีย์เป็นภาษาไทย
+  function getKeyNameThai(key, code) {
+    // ตัวอักษร A-Z
+    if (key.length === 1 && /[A-Za-z]/.test(key)) {
+      const thaiMap = {
+        'A': 'เอ', 'B': 'บี', 'C': 'ซี', 'D': 'ดี', 'E': 'อี',
+        'F': 'เอฟ', 'G': 'จี', 'H': 'เอช', 'I': 'ไอ', 'J': 'เจ',
+        'K': 'เค', 'L': 'แอล', 'M': 'เอ็ม', 'N': 'เอ็น', 'O': 'โอ',
+        'P': 'พี', 'Q': 'คิว', 'R': 'อาร์', 'S': 'เอส', 'T': 'ที',
+        'U': 'ยู', 'V': 'วี', 'W': 'ดับเบิลยู', 'X': 'เอกซ์', 'Y': 'วาย', 'Z': 'แซด'
+      };
+      return thaiMap[key.toUpperCase()] || key;
+    }
+
+    // ตัวเลข
+    if (/[0-9]/.test(key)) {
+      const numMap = {
+        '0': 'ศูนย์', '1': 'หนึ่ง', '2': 'สอง', '3': 'สาม', '4': 'สี่',
+        '5': 'ห้า', '6': 'หก', '7': 'เจ็ด', '8': 'แปด', '9': 'เก้า'
+      };
+      return numMap[key] || key;
+    }
+
+    // ปุ่มพิเศษ
+    const specialKeys = {
+      'Enter': 'Enter',
+      'Space': 'สเปซบาร์',
+      'Backspace': 'แบ็คสเปซ',
+      'Delete': 'ดีลีท',
+      'Tab': 'แท็บ',
+      'Escape': 'เอสเคป',
+      'ArrowUp': 'ลูกศรขึ้น',
+      'ArrowDown': 'ลูกศรลง',
+      'ArrowLeft': 'ลูกศรซ้าย',
+      'ArrowRight': 'ลูกศรขวา',
+      'Shift': 'ชิฟต์',
+      'Control': 'คอนโทรล',
+      'Alt': 'อัลท์',
+      'Meta': 'วินโดวส์',
+      'CapsLock': 'แคปล็อก',
+      'Home': 'โฮม',
+      'End': 'เอนด์',
+      'PageUp': 'เพจอัพ',
+      'PageDown': 'เพจดาวน์',
+      'Insert': 'อินเสิร์ท',
+      'F1': 'เอฟหนึ่ง',
+      'F2': 'เอฟสอง',
+      'F3': 'เอฟสาม',
+      'F4': 'เอฟสี่',
+      'F5': 'เอฟห้า',
+      'F6': 'เอฟหก',
+      'F7': 'เอฟเจ็ด',
+      'F8': 'เอฟแปด',
+      'F9': 'เอฟเก้า',
+      'F10': 'เอฟสิบ',
+      'F11': 'เอฟสิบเอ็ด',
+      'F12': 'เอฟสิบสอง',
+    };
+
+    return specialKeys[key] || key;
+  }
+  ////////////////////////////////////////////////////////////
 
 
 
