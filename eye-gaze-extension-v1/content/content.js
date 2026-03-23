@@ -21,6 +21,7 @@
     nightShiftBrightness: 95,
     nightShiftStart: '20:00',
     nightShiftEnd: '07:00',
+    doTextToSpeech: true,
   };
 
   // ─── Runtime state ────────────────────────────────────────────────────────────
@@ -307,6 +308,42 @@
       tooltip.textContent = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
       tooltip.style.display = 'block';
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // TTS: อ่านข้อความเมื่อเริ่มจ้อง
+    if (settings.doTextToSpeech) {
+      speakGazeText(el);
+    }
+
+    if (settings.doZoom) {
+      el.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
+      el.style.transform = `scale(${settings.zoomScale})`;
+      el.style.transformOrigin = 'center center';
+      el.style.zIndex = '9999';
+      el.style.position = el.style.position || 'relative';
+    }
+    if (settings.doGlow) {
+      el.style.boxShadow = `0 0 12px 4px ${settings.glowColor}`;
+      el.style.outline = `2px solid ${settings.glowColor}`;
+      el.style.borderRadius = '3px';
+    }
+    if (settings.doTooltip) {
+      tooltip.textContent = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
+      tooltip.style.display = 'block';
+    }
   }
 
   function clearEffects(el) {
@@ -314,6 +351,22 @@
     el.style.transform = ''; el.style.zIndex = '';
     el.style.boxShadow = ''; el.style.outline = '';
     tooltip.style.display = 'none';
+
+
+
+
+
+    // ยกเลิก TTS ที่ค้างอยู่ (ไม่จำเป็นต้องพูดข้อความเดิมอีก)
+    if (gazeSpeechTimeout) {
+      clearTimeout(gazeSpeechTimeout);
+      gazeSpeechTimeout = null;
+    }
+
+    el.style.transform = ''; el.style.zIndex = '';
+    el.style.boxShadow = ''; el.style.outline = '';
+    tooltip.style.display = 'none';
+
+
   }
 
   // ─── Target detection ─────────────────────────────────────────────────────────
@@ -756,6 +809,13 @@
   let lastSpokenKey = null;
   let keySpeechTimeout = null;
 
+
+
+
+  let lastSpokenText = null;
+  let gazeSpeechTimeout = null;
+  let isSpeakingGazeText = false;
+
   function speakThai(text) {
     if (!settings.enabled) return;
 
@@ -851,6 +911,86 @@
     };
 
     return specialKeys[key] || key;
+  }
+
+
+
+
+  // ฟังก์ชันอ่านข้อความจาก element ที่ gaze
+  function speakGazeText(element) {
+    if (!settings.enabled) return;
+    if (!settings.doTextToSpeech) return; // ต้องเปิด setting นี้ก่อน
+
+    // ดึงข้อความจาก element
+    let textToSpeak = '';
+
+    // ลำดับการดึงข้อความ: data-gazelink-speech > title > alt > aria-label > textContent
+    if (element.hasAttribute('data-gazelink-speech')) {
+      textToSpeak = element.getAttribute('data-gazelink-speech');
+    } else if (element.hasAttribute('title')) {
+      textToSpeak = element.getAttribute('title');
+    } else if (element.hasAttribute('alt')) {
+      textToSpeak = element.getAttribute('alt');
+    } else if (element.hasAttribute('aria-label')) {
+      textToSpeak = element.getAttribute('aria-label');
+    } else {
+      // ดึงข้อความภายใน element (แต่จำกัดความยาว)
+      let rawText = element.textContent || element.innerText || '';
+      textToSpeak = rawText.trim().slice(0, 100); // จำกัด 100 ตัวอักษร
+    }
+
+    if (!textToSpeak || textToSpeak.length === 0) return;
+
+    // ป้องกันการพูดข้อความเดิมซ้ำ
+    if (lastSpokenText === textToSpeak) {
+      // ถ้าเป็นข้อความเดิม ให้พูดแค่ครั้งเดียว
+      return;
+    }
+
+    lastSpokenText = textToSpeak;
+
+    // หน่วงเวลาก่อนพูด เพื่อให้แน่ใจว่า gaze จริงๆ
+    if (gazeSpeechTimeout) clearTimeout(gazeSpeechTimeout);
+
+    gazeSpeechTimeout = setTimeout(() => {
+      // ยกเลิกการพูดที่กำลังดำเนินอยู่
+      if (isSpeakingGazeText) {
+        speechSynthesis.cancel();
+      }
+
+      isSpeakingGazeText = true;
+
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.lang = 'th-TH';
+      utterance.rate = 0.85;
+      utterance.pitch = 1.0;
+
+      // เลือกเสียงภาษาไทย
+      const voices = speechSynthesis.getVoices();
+      const thaiVoice = voices.find(voice =>
+        voice.lang === 'th-TH' ||
+        voice.lang === 'th' ||
+        voice.name.includes('Thai') ||
+        voice.name.includes('Kanya')
+      );
+      if (thaiVoice) utterance.voice = thaiVoice;
+
+      utterance.onend = () => {
+        isSpeakingGazeText = false;
+        // ล้างข้อความจำหลังจากพูดจบ 2 วินาที
+        setTimeout(() => {
+          if (lastSpokenText === textToSpeak) {
+            lastSpokenText = null;
+          }
+        }, 2000);
+      };
+
+      utterance.onerror = () => {
+        isSpeakingGazeText = false;
+      };
+
+      speechSynthesis.speak(utterance);
+    }, 400); // หน่วง 400ms ก่อนพูด
   }
   ////////////////////////////////////////////////////////////
 
