@@ -1,4 +1,4 @@
-(function () {
+(function() {
   'use strict';
 
   const WS_URL = 'ws://localhost:8765';
@@ -48,9 +48,9 @@
   let drowsyCount = 0;
   let currentBreakStage = 0;
   let breakScreenVisible = false;
-  
+
   function saveDrowsyState() {
-  chrome.storage.local.set({ gazelink_drowsy: { count: drowsyCount, stage: currentBreakStage } });
+    chrome.storage.local.set({ gazelink_drowsy: { count: drowsyCount, stage: currentBreakStage } });
   }
 
   // ─── WebSocket ────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       console.log('[GazeLink] WS connected');
       wsConnected = true;
-      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'connected' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'connected' }).catch(() => { });
     });
 
     ws.addEventListener('message', (event) => {
@@ -88,11 +88,11 @@
 
     ws.addEventListener('close', () => {
       ws = null; wsConnected = false;
-      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'disconnected' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'disconnected' }).catch(() => { });
       if (settings.enabled) scheduleReconnect();
     });
 
-    ws.addEventListener('error', () => {});
+    ws.addEventListener('error', () => { });
   }
 
   function disconnectWS() {
@@ -198,9 +198,9 @@
 
   function updateDrowsyOverlay() {
     let color = '#22c55e', label = 'Alert';
-    if      (drowsyCount >= DROWSY_STAGE_3) { color = '#7c3aed'; label = 'Sleep!';     }
+    if (drowsyCount >= DROWSY_STAGE_3) { color = '#7c3aed'; label = 'Sleep!'; }
     else if (drowsyCount >= DROWSY_STAGE_2) { color = '#ef4444'; label = 'Very Tired'; }
-    else if (drowsyCount >= DROWSY_STAGE_1) { color = '#f59e0b'; label = 'Tired';      }
+    else if (drowsyCount >= DROWSY_STAGE_1) { color = '#f59e0b'; label = 'Tired'; }
     drowsyOverlay.style.color = color;
     drowsyOverlay.style.borderColor = color;
     drowsyOverlay.textContent = `😴 ${label} · ${drowsyCount}`;
@@ -297,8 +297,8 @@
     let node = el;
     while (node && node !== document.body) {
       if (node.tagName === 'A' || node.tagName === 'BUTTON' ||
-          node.getAttribute?.('role') === 'button' ||
-          node.getAttribute?.('role') === 'link' || node.onclick) return node;
+        node.getAttribute?.('role') === 'button' ||
+        node.getAttribute?.('role') === 'link' || node.onclick) return node;
       node = node.parentElement;
     }
     return null;
@@ -358,7 +358,7 @@
     const now = new Date();
     const cur = now.getHours() * 60 + now.getMinutes();
     const [sh, sm] = (settings.nightShiftStart || '20:00').split(':').map(Number);
-    const [eh, em] = (settings.nightShiftEnd   || '07:00').split(':').map(Number);
+    const [eh, em] = (settings.nightShiftEnd || '07:00').split(':').map(Number);
     const s = sh * 60 + sm, e = eh * 60 + em;
     return s > e ? (cur >= s || cur < e) : (cur >= s && cur < e);
   }
@@ -444,7 +444,7 @@
       <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">${cfg.message}</p>
       <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">${cfg.sub}</p>
       <div style="width:100%;height:4px;background:rgba(255,255,255,0.08);border-radius:4px;margin-bottom:28px;overflow:hidden">
-        <div style="height:100%;width:${(stage/3)*100}%;background:${cfg.color};border-radius:4px"></div>
+        <div style="height:100%;width:${(stage / 3) * 100}%;background:${cfg.color};border-radius:4px"></div>
       </div>
       <button id="__gazelink_break_btn__" style="
         background:${cfg.color};color:white;border:none;padding:13px 32px;
@@ -494,7 +494,7 @@
     updateDrowsyOverlay();
     saveDrowsyState();
 
-    if      (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
+    if (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
     else if (drowsyCount >= DROWSY_STAGE_2 && currentBreakStage < 2) { currentBreakStage = 2; showBreakScreen(2); }
     else if (drowsyCount >= DROWSY_STAGE_1 && currentBreakStage < 1) { currentBreakStage = 1; showBreakScreen(1); }
   }
@@ -583,7 +583,156 @@
     drowsyCount = 0;
     currentBreakStage = 0;
     updateDrowsyOverlay();
+    stopHourlyBreakReminder();
   }
+
+
+
+
+
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // ─── Hourly Break Reminder ─────────────────────────────────────────────────────────
+
+  let lastBreakReminder = null;
+  let breakReminderInterval = null;
+  let breakReminderScreenVisible = false;
+  const ONE_HOUR_MS = 60 * 60 * 1000; // 1 ชั่วโมงเป็นมิลลิวินาที
+
+  // สร้าง element สำหรับเตือนพัก
+  const hourBreakScreen = document.createElement('div');
+  hourBreakScreen.id = '__gazelink_hour_break__';
+  Object.assign(hourBreakScreen.style, {
+    position: 'fixed', inset: '0', zIndex: '2147483644',
+    display: 'none', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(12px)', webkitBackdropFilter: 'blur(12px)',
+    background: 'rgba(0,0,0,0.75)', opacity: '0',
+    transition: 'opacity 0.4s ease',
+  });
+
+  const hourBreakCard = document.createElement('div');
+  Object.assign(hourBreakCard.style, {
+    background: 'rgba(20,20,35,0.98)', border: '1px solid rgba(168,85,247,0.5)',
+    borderRadius: '20px', padding: '48px 40px', maxWidth: '440px', width: '90%',
+    textAlign: 'center', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+    transform: 'translateY(20px)', transition: 'transform 0.4s ease',
+  });
+
+  hourBreakScreen.appendChild(hourBreakCard);
+  document.documentElement.appendChild(hourBreakScreen);
+
+  function showHourBreakReminder() {
+    if (breakReminderScreenVisible) return;
+    if (!settings.enabled) return;
+
+    breakReminderScreenVisible = true;
+
+    hourBreakCard.innerHTML = `
+    <div style="font-size:64px;margin-bottom:16px;line-height:1">⏰</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#a855f7;font-weight:700;margin-bottom:12px">
+      GazeLink · Eye Health Reminder
+    </div>
+    <h2 style="color:#f0f0ff;font-size:22px;font-weight:700;margin-bottom:14px;line-height:1.3">Time for a Break!</h2>
+    <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">
+      You've been using the screen for 1 hour continuously.
+    </p>
+    <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">
+      Give your eyes a 5-minute break. Look away from the screen and rest your eyes. 👁️
+    </p>
+    <button id="__gazelink_hour_break_btn__" style="
+      background:#a855f7;color:white;border:none;padding:13px 32px;
+      border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;
+      width:100%;letter-spacing:0.3px;margin-bottom:12px
+    ">I'll take a break ✓</button>
+    <button id="__gazelink_hour_break_snooze__" style="
+      background:transparent;color:#888;border:1px solid #444;
+      padding:10px 24px;border-radius:12px;font-size:12px;
+      cursor:pointer;width:100%
+    ">Snooze (15 min)</button>
+  `;
+
+    hourBreakScreen.style.display = 'flex';
+    requestAnimationFrame(() => {
+      hourBreakScreen.style.opacity = '1';
+      hourBreakCard.style.transform = 'translateY(0)';
+    });
+
+    document.getElementById('__gazelink_hour_break_btn__').addEventListener('click', () => {
+      dismissHourBreakReminder();
+    });
+
+    document.getElementById('__gazelink_hour_break_snooze__').addEventListener('click', () => {
+      dismissHourBreakReminder();
+      // Snooze: reset timer ให้เริ่มนับใหม่หลังจาก 15 นาที
+      if (breakReminderInterval) clearInterval(breakReminderInterval);
+      lastBreakReminder = Date.now();
+      breakReminderInterval = setInterval(() => {
+        checkHourlyBreak();
+      }, 60000); // ตรวจสอบทุกนาที
+    });
+  }
+
+  function dismissHourBreakReminder() {
+    hourBreakScreen.style.opacity = '0';
+    hourBreakCard.style.transform = 'translateY(20px)';
+    setTimeout(() => {
+      hourBreakScreen.style.display = 'none';
+      breakReminderScreenVisible = false;
+    }, 400);
+  }
+
+  function checkHourlyBreak() {
+    if (!settings.enabled) return;
+    if (breakReminderScreenVisible) return;
+    if (breakScreenVisible) return; // ไม่เตือนซ้ำถ้ากำลังแสดง break screen จากการ drowsy
+
+    const now = Date.now();
+    if (!lastBreakReminder) {
+      lastBreakReminder = now;
+      return;
+    }
+
+    if (now - lastBreakReminder >= ONE_HOUR_MS) {
+      showHourBreakReminder();
+      lastBreakReminder = now; // reset หลังจากแสดงเตือน
+    }
+  }
+
+  function startHourlyBreakReminder() {
+    if (breakReminderInterval) clearInterval(breakReminderInterval);
+    lastBreakReminder = Date.now(); // reset timer เมื่อเริ่มใช้งาน
+    breakReminderInterval = setInterval(() => {
+      checkHourlyBreak();
+    }, 60000); // ตรวจสอบทุกนาที
+  }
+
+  function stopHourlyBreakReminder() {
+    if (breakReminderInterval) {
+      clearInterval(breakReminderInterval);
+      breakReminderInterval = null;
+    }
+    if (hourBreakScreen.style.display !== 'none') {
+      dismissHourBreakReminder();
+    }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // ─── Message listener (popup → content) ──────────────────────────────────────
 
@@ -594,7 +743,7 @@
     }
     if (msg.type === 'SETTINGS_UPDATE') {
       settings = { ...settings, ...msg.settings };
-      if (settings.enabled) { connectWS(); showHUD(); }
+      if (settings.enabled) { connectWS(); showHUD(); startHourlyBreakReminder(); }
       else fullStop();
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
@@ -607,10 +756,10 @@
     }
     if (msg.type === 'NIGHT_SHIFT_UPDATE') {
       const { nightShift, nightShiftStart, nightShiftEnd, nightShiftWarmth, nightShiftBrightness } = msg;
-      if (nightShift           !== undefined) settings.nightShift           = nightShift;
-      if (nightShiftStart      !== undefined) settings.nightShiftStart      = nightShiftStart;
-      if (nightShiftEnd        !== undefined) settings.nightShiftEnd        = nightShiftEnd;
-      if (nightShiftWarmth     !== undefined) settings.nightShiftWarmth     = nightShiftWarmth;
+      if (nightShift !== undefined) settings.nightShift = nightShift;
+      if (nightShiftStart !== undefined) settings.nightShiftStart = nightShiftStart;
+      if (nightShiftEnd !== undefined) settings.nightShiftEnd = nightShiftEnd;
+      if (nightShiftWarmth !== undefined) settings.nightShiftWarmth = nightShiftWarmth;
       if (nightShiftBrightness !== undefined) settings.nightShiftBrightness = nightShiftBrightness;
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
@@ -626,7 +775,7 @@
       currentBreakStage = result.gazelink_drowsy.stage ?? 0;
     }
 
-    if (settings.enabled) { connectWS(); showHUD(); }
+    if (settings.enabled) { connectWS(); showHUD(); startHourlyBreakReminder(); }
     if (settings.nightShift) startNightShiftWatch();
   });
 
