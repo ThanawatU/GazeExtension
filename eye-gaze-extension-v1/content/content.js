@@ -14,6 +14,8 @@
     doGlow: true,
     doTooltip: true,
     doOpenOnDwell: false,
+    doButtonHoldSpeech: true,
+    speechMode: 'ctrl',
     glowColor: '#a855f7',
     showGazeDot: true,
     nightShift: false,
@@ -21,7 +23,6 @@
     nightShiftBrightness: 95,
     nightShiftStart: '20:00',
     nightShiftEnd: '07:00',
-    doTextToSpeech: true,
   };
 
   // ─── Runtime state ────────────────────────────────────────────────────────────
@@ -39,8 +40,6 @@
   let nightShiftCheckTimer = null;
 
   // ─── Drowsiness state ─────────────────────────────────────────────────────────
-  // Thresholds in "drowsy frames received". At 25fps with ~50% drowsy detection
-  // rate, stage1≈12s, stage2≈24s, stage3≈42s. Tune these to taste.
 
   const DROWSY_STAGE_1 = 20;
   const DROWSY_STAGE_2 = 40;
@@ -249,14 +248,13 @@
       }, 1000);
     }
 
-
-
-
-    // ไม่พูดถ้าเป็น Alt (เพราะ Alt มี function ของมันอยู่)
     if (e.key === 'Alt') return;
+
+    // ไม่พูดปุ่ม Control 
+    if (e.key === 'Control' || e.key === 'Ctrl') return;
+
     if (!settings.enabled) return;
 
-    // ป้องกันการพูดซ้ำถ้ากดค้าง
     const currentKey = e.key;
     if (lastSpokenKey === currentKey) {
       if (keySpeechTimeout) clearTimeout(keySpeechTimeout);
@@ -267,17 +265,10 @@
     lastSpokenKey = currentKey;
     keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 500);
 
-    // อ่านเสียง - จะยกเลิกเสียงเก่าและพูดใหม่ทันที
     const thaiName = getKeyNameThai(e.key, e.code);
     speakThai(thaiName);
-
-
-
-
-
-
-
   });
+
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Alt') { clearTimeout(altHoldTimer); altHoldTimer = null; altHoldTriggered = false; }
   });
@@ -308,42 +299,6 @@
       tooltip.textContent = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
       tooltip.style.display = 'block';
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // TTS: อ่านข้อความเมื่อเริ่มจ้อง
-    if (settings.doTextToSpeech) {
-      speakGazeText(el);
-    }
-
-    if (settings.doZoom) {
-      el.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
-      el.style.transform = `scale(${settings.zoomScale})`;
-      el.style.transformOrigin = 'center center';
-      el.style.zIndex = '9999';
-      el.style.position = el.style.position || 'relative';
-    }
-    if (settings.doGlow) {
-      el.style.boxShadow = `0 0 12px 4px ${settings.glowColor}`;
-      el.style.outline = `2px solid ${settings.glowColor}`;
-      el.style.borderRadius = '3px';
-    }
-    if (settings.doTooltip) {
-      tooltip.textContent = el.href || el.getAttribute('href') || el.title || el.textContent.trim().slice(0, 60);
-      tooltip.style.display = 'block';
-    }
   }
 
   function clearEffects(el) {
@@ -351,22 +306,6 @@
     el.style.transform = ''; el.style.zIndex = '';
     el.style.boxShadow = ''; el.style.outline = '';
     tooltip.style.display = 'none';
-
-
-
-
-
-    // ยกเลิก TTS ที่ค้างอยู่ (ไม่จำเป็นต้องพูดข้อความเดิมอีก)
-    if (gazeSpeechTimeout) {
-      clearTimeout(gazeSpeechTimeout);
-      gazeSpeechTimeout = null;
-    }
-
-    el.style.transform = ''; el.style.zIndex = '';
-    el.style.boxShadow = ''; el.style.outline = '';
-    tooltip.style.display = 'none';
-
-
   }
 
   // ─── Target detection ─────────────────────────────────────────────────────────
@@ -556,12 +495,9 @@
     document.removeEventListener('keydown', escDismiss);
 
     if (currentBreakStage >= 3) {
-      // Final stage — user acknowledged, full reset
       drowsyCount = 0;
       currentBreakStage = 0;
     }
-    // Stages 1 & 2: do nothing — count stays where it is and
-    // keeps climbing toward the next stage naturally.
 
     updateDrowsyOverlay();
     saveDrowsyState();
@@ -571,7 +507,7 @@
 
   function handleDrowsy(isDrowsy) {
     if (!isDrowsy) return;
-    if (breakScreenVisible) return; // don't keep counting while break screen is shown
+    if (breakScreenVisible) return;
     drowsyCount++;
     updateDrowsyOverlay();
     saveDrowsyState();
@@ -580,49 +516,6 @@
     else if (drowsyCount >= DROWSY_STAGE_2 && currentBreakStage < 2) { currentBreakStage = 2; showBreakScreen(2); }
     else if (drowsyCount >= DROWSY_STAGE_1 && currentBreakStage < 1) { currentBreakStage = 1; showBreakScreen(1); }
   }
-
-  // ─── Calibration ─────────────────────────────────────────────────────────────
-
-  // function setupCalibration() {
-  //   const grid = 3, points = [];
-  //   for (let i = 0; i < grid; i++)
-  //     for (let j = 0; j < grid; j++)
-  //       points.push([i / (grid - 1), j / (grid - 1)]);
-
-  //   let index = 0, sampleCount = 0;
-  //   const maxSamples = 5;
-
-  //   const calDot = document.createElement('div');
-  //   Object.assign(calDot.style, {
-  //     position: 'fixed', width: '40px', height: '40px', borderRadius: '50%',
-  //     background: settings.glowColor, zIndex: '2147483647', cursor: 'pointer',
-  //     transition: 'all 0.2s ease', boxShadow: `0 0 16px 4px ${settings.glowColor}`,
-  //   });
-  //   const calLabel = document.createElement('div');
-  //   Object.assign(calLabel.style, {
-  //     position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-  //     color: 'white', fontFamily: 'monospace', fontSize: '14px', zIndex: '2147483647',
-  //     background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px', pointerEvents: 'none',
-  //   });
-  //   calLabel.textContent = 'Click each dot to calibrate (5 clicks each)';
-  //   document.documentElement.appendChild(calLabel);
-  //   document.documentElement.appendChild(calDot);
-
-  //   function showNext() {
-  //     if (index >= points.length) { calDot.remove(); calLabel.remove(); showNotification('✅ Calibration complete!'); return; }
-  //     const [px, py] = points[index];
-  //     calDot.style.left = (px * (window.innerWidth - 40)) + 'px';
-  //     calDot.style.top  = (py * (window.innerHeight - 40)) + 'px';
-  //     sampleCount = 0;
-  //   }
-  //   calDot.addEventListener('click', () => {
-  //     sampleCount++;
-  //     calDot.style.background = sampleCount % 2 === 0 ? settings.glowColor : '#fff';
-  //     calLabel.textContent = `Point ${index + 1}/${points.length} — click ${maxSamples - sampleCount} more`;
-  //     if (sampleCount >= maxSamples) { index++; showNext(); }
-  //   });
-  //   showNext();
-  // }
 
   // ─── Notification ─────────────────────────────────────────────────────────────
 
@@ -666,22 +559,16 @@
     currentBreakStage = 0;
     updateDrowsyOverlay();
     stopHourlyBreakReminder();
+    stopButtonHoldListener();
   }
 
-
-
-
-
-
-  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // ─── Hourly Break Reminder ─────────────────────────────────────────────────────────
 
   let lastBreakReminder = null;
   let breakReminderInterval = null;
   let breakReminderScreenVisible = false;
-  const ONE_HOUR_MS = 60 * 60 * 1000; // 1 ชั่วโมงเป็นมิลลิวินาที
+  const ONE_HOUR_MS = 20 * 60 * 1000;
 
-  // สร้าง element สำหรับเตือนพัก
   const hourBreakScreen = document.createElement('div');
   hourBreakScreen.id = '__gazelink_hour_break__';
   Object.assign(hourBreakScreen.style, {
@@ -717,10 +604,10 @@
     </div>
     <h2 style="color:#f0f0ff;font-size:22px;font-weight:700;margin-bottom:14px;line-height:1.3">Time for a Break!</h2>
     <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">
-      You've been using the screen for 1 hour continuously.
+      You've been using the screen for 20 minutes continuously.
     </p>
     <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">
-      Give your eyes a 5-minute break. Look away from the screen and rest your eyes. 👁️
+        Give your eyes a break every 20 minutes. Look at something 6 meters away from the screen for 20 seconds. 👁️
     </p>
     <button id="__gazelink_hour_break_btn__" style="
       background:#a855f7;color:white;border:none;padding:13px 32px;
@@ -746,12 +633,11 @@
 
     document.getElementById('__gazelink_hour_break_snooze__').addEventListener('click', () => {
       dismissHourBreakReminder();
-      // Snooze: reset timer ให้เริ่มนับใหม่หลังจาก 15 นาที
       if (breakReminderInterval) clearInterval(breakReminderInterval);
       lastBreakReminder = Date.now();
       breakReminderInterval = setInterval(() => {
         checkHourlyBreak();
-      }, 60000); // ตรวจสอบทุกนาที
+      }, 60000);
     });
   }
 
@@ -767,7 +653,7 @@
   function checkHourlyBreak() {
     if (!settings.enabled) return;
     if (breakReminderScreenVisible) return;
-    if (breakScreenVisible) return; // ไม่เตือนซ้ำถ้ากำลังแสดง break screen จากการ drowsy
+    if (breakScreenVisible) return;
 
     const now = Date.now();
     if (!lastBreakReminder) {
@@ -777,16 +663,16 @@
 
     if (now - lastBreakReminder >= ONE_HOUR_MS) {
       showHourBreakReminder();
-      lastBreakReminder = now; // reset หลังจากแสดงเตือน
+      lastBreakReminder = now;
     }
   }
 
   function startHourlyBreakReminder() {
     if (breakReminderInterval) clearInterval(breakReminderInterval);
-    lastBreakReminder = Date.now(); // reset timer เมื่อเริ่มใช้งาน
+    lastBreakReminder = Date.now();
     breakReminderInterval = setInterval(() => {
       checkHourlyBreak();
-    }, 60000); // ตรวจสอบทุกนาที
+    }, 60000);
   }
 
   function stopHourlyBreakReminder() {
@@ -799,37 +685,21 @@
     }
   }
 
-  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
-  ////////////////////////////////////////////////////////////////////
   // ─── Keyboard speech (Thai voice) ──────────────────────────────────────────────
 
   let lastSpokenKey = null;
   let keySpeechTimeout = null;
 
-
-
-
-  let lastSpokenText = null;
-  let gazeSpeechTimeout = null;
-  let isSpeakingGazeText = false;
-
   function speakThai(text) {
     if (!settings.enabled) return;
-
-    // ยกเลิกการพูดที่กำลังดำเนินอยู่ทันที
     speechSynthesis.cancel();
 
-    // สร้าง utterance ใหม่
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'th-TH';
     utterance.rate = 0.9;
     utterance.pitch = 1.0;
     utterance.volume = 0.8;
 
-    // พยายามเลือกเสียงภาษาไทย
     let voices = [];
     const setVoice = () => {
       voices = speechSynthesis.getVoices();
@@ -843,7 +713,6 @@
       speechSynthesis.speak(utterance);
     };
 
-    // ถ้า voices โหลดแล้ว ให้ใช้เลย ถ้ายังให้รอ
     if (speechSynthesis.getVoices().length > 0) {
       setVoice();
     } else {
@@ -851,9 +720,7 @@
     }
   }
 
-  // แปลงชื่อคีย์เป็นภาษาไทย
   function getKeyNameThai(key, code) {
-    // ตัวอักษร A-Z
     if (key.length === 1 && /[A-Za-z]/.test(key)) {
       const thaiMap = {
         'A': 'เอ', 'B': 'บี', 'C': 'ซี', 'D': 'ดี', 'E': 'อี',
@@ -865,7 +732,6 @@
       return thaiMap[key.toUpperCase()] || key;
     }
 
-    // ตัวเลข
     if (/[0-9]/.test(key)) {
       const numMap = {
         '0': 'ศูนย์', '1': 'หนึ่ง', '2': 'สอง', '3': 'สาม', '4': 'สี่',
@@ -874,7 +740,6 @@
       return numMap[key] || key;
     }
 
-    // ปุ่มพิเศษ
     const specialKeys = {
       'Enter': 'Enter',
       'Space': 'สเปซบาร์',
@@ -913,97 +778,409 @@
     return specialKeys[key] || key;
   }
 
+  // ─── Text-to-Speech with Button Hold (Ctrl) + Highlight ──────────────────────
 
+  let isCtrlPressed = false;
+  let ctrlHoldTimer = null;
+  let lastSpokenHoldText = null;
+  let holdSpeechTimeout = null;
+  let isSpeakingHoldText = false;
+  let currentHoldTarget = null;
+  let currentUtterance = null;
+  let ctrlIndicator = null;
 
+  // สร้าง element สำหรับ highlight
+  const highlightSpan = document.createElement('span');
+  highlightSpan.id = '__gazelink_highlight__';
+  Object.assign(highlightSpan.style, {
+    position: 'absolute',
+    backgroundColor: 'rgba(168, 85, 247, 0.4)',
+    borderBottom: `2px solid ${settings.glowColor}`,
+    borderRadius: '2px',
+    pointerEvents: 'none',
+    zIndex: '2147483646',
+    transition: 'all 0.05s linear',
+    boxShadow: '0 0 4px rgba(168,85,247,0.5)',
+    display: 'none'
+  });
+  document.documentElement.appendChild(highlightSpan);
 
-  // ฟังก์ชันอ่านข้อความจาก element ที่ gaze
-  function speakGazeText(element) {
-    if (!settings.enabled) return;
-    if (!settings.doTextToSpeech) return; // ต้องเปิด setting นี้ก่อน
-
-    // ดึงข้อความจาก element
-    let textToSpeak = '';
-
-    // ลำดับการดึงข้อความ: data-gazelink-speech > title > alt > aria-label > textContent
+  function getElementText(element) {
     if (element.hasAttribute('data-gazelink-speech')) {
-      textToSpeak = element.getAttribute('data-gazelink-speech');
+      return element.getAttribute('data-gazelink-speech');
     } else if (element.hasAttribute('title')) {
-      textToSpeak = element.getAttribute('title');
+      return element.getAttribute('title');
     } else if (element.hasAttribute('alt')) {
-      textToSpeak = element.getAttribute('alt');
+      return element.getAttribute('alt');
     } else if (element.hasAttribute('aria-label')) {
-      textToSpeak = element.getAttribute('aria-label');
+      return element.getAttribute('aria-label');
     } else {
-      // ดึงข้อความภายใน element (แต่จำกัดความยาว)
       let rawText = element.textContent || element.innerText || '';
-      textToSpeak = rawText.trim().slice(0, 100); // จำกัด 100 ตัวอักษร
+      rawText = rawText.trim();
+      if (rawText.length > 100) {
+        rawText = rawText.slice(0, 100) + '...';
+      }
+      return rawText;
+    }
+  }
+
+  function splitIntoWords(text) {
+    const thaiWordPattern = /[\u0E00-\u0E7F]+/g;
+    const englishWordPattern = /[a-zA-Z]+/g;
+    const numberPattern = /[0-9]+/g;
+
+    let matches = [];
+    let match;
+
+    while ((match = thaiWordPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+    }
+    while ((match = englishWordPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+    }
+    while ((match = numberPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
     }
 
-    if (!textToSpeak || textToSpeak.length === 0) return;
+    matches.sort((a, b) => a.start - b.start);
 
-    // ป้องกันการพูดข้อความเดิมซ้ำ
-    if (lastSpokenText === textToSpeak) {
-      // ถ้าเป็นข้อความเดิม ให้พูดแค่ครั้งเดียว
+    let merged = [];
+    for (let i = 0; i < matches.length; i++) {
+      if (merged.length === 0) {
+        merged.push(matches[i]);
+      } else {
+        let last = merged[merged.length - 1];
+        if (matches[i].start - last.end <= 2 &&
+          /[\u0E00-\u0E7F]/.test(last.text) &&
+          /[\u0E00-\u0E7F]/.test(matches[i].text)) {
+          last.end = matches[i].end;
+          last.text = text.substring(last.start, last.end);
+        } else {
+          merged.push(matches[i]);
+        }
+      }
+    }
+
+    return merged;
+  }
+
+  function findTextNodeAtPosition(element, position) {
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function(node) {
+          if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
+          if (node.parentElement?.tagName === 'SCRIPT' || node.parentElement?.tagName === 'STYLE') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    let currentNode;
+    let currentPos = 0;
+
+    while (currentNode = walker.nextNode()) {
+      const nodeText = currentNode.textContent;
+      const nodeLength = nodeText.length;
+
+      if (position >= currentPos && position < currentPos + nodeLength) {
+        const offset = position - currentPos;
+        return { node: currentNode, start: offset, end: offset + 1 };
+      }
+
+      currentPos += nodeLength;
+    }
+
+    return null;
+  }
+
+  function highlightWordRange(element, start, end) {
+    try {
+      const range = document.createRange();
+      const textNodeInfo = findTextNodeAtPosition(element, start);
+
+      if (textNodeInfo && textNodeInfo.node) {
+        range.setStart(textNodeInfo.node, textNodeInfo.start);
+        range.setEnd(textNodeInfo.node, textNodeInfo.end);
+
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const rect = rects[0];
+          highlightSpan.style.display = 'block';
+          highlightSpan.style.left = rect.left + 'px';
+          highlightSpan.style.top = rect.top + 'px';
+          highlightSpan.style.width = rect.width + 'px';
+          highlightSpan.style.height = rect.height + 'px';
+
+          if (rect.top < 100 || rect.bottom > window.innerHeight - 100) {
+            rect.element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+  function highlightWord(word, element, fullText) {
+    if (!word || !element) return;
+    try {
+      const textContent = element.textContent || element.innerText;
+      const wordIndex = textContent.indexOf(word);
+      if (wordIndex !== -1) {
+        highlightWordRange(element, wordIndex, wordIndex + word.length);
+      }
+    } catch (e) { }
+  }
+
+  function hideHighlight() {
+    highlightSpan.style.display = 'none';
+  }
+
+  function speakWithHighlight(text, element) {
+    if (!text || !element) return;
+
+    if (currentUtterance) {
+      speechSynthesis.cancel();
+      hideHighlight();
+    }
+
+    const words = splitIntoWords(text);
+
+    if (words.length === 0) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      setupUtterance(utterance, element);
+      speechSynthesis.speak(utterance);
       return;
     }
 
-    lastSpokenText = textToSpeak;
+    let currentWordPos = 0;
 
-    // หน่วงเวลาก่อนพูด เพื่อให้แน่ใจว่า gaze จริงๆ
-    if (gazeSpeechTimeout) clearTimeout(gazeSpeechTimeout);
-
-    gazeSpeechTimeout = setTimeout(() => {
-      // ยกเลิกการพูดที่กำลังดำเนินอยู่
-      if (isSpeakingGazeText) {
-        speechSynthesis.cancel();
+    function speakNextWord() {
+      if (currentWordPos >= words.length) {
+        hideHighlight();
+        currentUtterance = null;
+        return;
       }
 
-      isSpeakingGazeText = true;
+      const wordObj = words[currentWordPos];
+      const wordText = wordObj.text;
 
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.lang = 'th-TH';
-      utterance.rate = 0.85;
-      utterance.pitch = 1.0;
+      highlightWord(wordText, element, text);
 
-      // เลือกเสียงภาษาไทย
-      const voices = speechSynthesis.getVoices();
-      const thaiVoice = voices.find(voice =>
-        voice.lang === 'th-TH' ||
-        voice.lang === 'th' ||
-        voice.name.includes('Thai') ||
-        voice.name.includes('Kanya')
-      );
-      if (thaiVoice) utterance.voice = thaiVoice;
+      const utterance = new SpeechSynthesisUtterance(wordText);
+
+      utterance.onstart = () => {
+        currentUtterance = utterance;
+      };
 
       utterance.onend = () => {
-        isSpeakingGazeText = false;
-        // ล้างข้อความจำหลังจากพูดจบ 2 วินาที
+        currentWordPos++;
         setTimeout(() => {
-          if (lastSpokenText === textToSpeak) {
-            lastSpokenText = null;
+          if (currentUtterance === utterance) {
+            speakNextWord();
           }
-        }, 2000);
+        }, 50);
       };
 
       utterance.onerror = () => {
-        isSpeakingGazeText = false;
+        currentWordPos++;
+        speakNextWord();
       };
 
+      setupUtterance(utterance, element);
       speechSynthesis.speak(utterance);
-    }, 400); // หน่วง 400ms ก่อนพูด
+    }
+
+    speakNextWord();
   }
-  ////////////////////////////////////////////////////////////
 
+  function setupUtterance(utterance, element) {
+    utterance.lang = 'th-TH';
+    utterance.rate = 0.8;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.9;
 
+    const voices = speechSynthesis.getVoices();
+    const thaiVoice = voices.find(voice =>
+      voice.lang === 'th-TH' ||
+      voice.lang === 'th' ||
+      voice.name.includes('Thai') ||
+      voice.name.includes('Kanya')
+    );
+    if (thaiVoice) utterance.voice = thaiVoice;
+  }
 
+  function showMiniToast(text) {
+    const toast = document.createElement('div');
+    Object.assign(toast.style, {
+      position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(0,0,0,0.85)', color: '#fff', padding: '6px 12px',
+      borderRadius: '20px', fontSize: '12px', fontFamily: 'sans-serif',
+      zIndex: '2147483647', pointerEvents: 'none', whiteSpace: 'nowrap',
+      maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis',
+      backdropFilter: 'blur(4px)'
+    });
+    toast.textContent = text;
+    document.documentElement.appendChild(toast);
+    setTimeout(() => toast.remove(), 1500);
+  }
 
+  function speakTextOnHold(element) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+    if (!isCtrlPressed) return;
 
+    const textToSpeak = getElementText(element);
+    if (!textToSpeak || textToSpeak.length === 0) return;
 
+    if (currentHoldTarget === element && lastSpokenHoldText === textToSpeak) {
+      return;
+    }
 
+    currentHoldTarget = element;
+    lastSpokenHoldText = textToSpeak;
 
+    if (holdSpeechTimeout) clearTimeout(holdSpeechTimeout);
 
+    holdSpeechTimeout = setTimeout(() => {
+      speakWithHighlight(textToSpeak, element);
+      showMiniToast('🔊 ' + textToSpeak.slice(0, 40));
+    }, 150);
+  }
 
+  function handleF2Press() {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
 
+    const mouseX = window.event?.clientX || 0;
+    const mouseY = window.event?.clientY || 0;
+    const elementAtCursor = document.elementFromPoint(mouseX, mouseY);
+
+    if (elementAtCursor) {
+      let target = elementAtCursor;
+      while (target && target !== document.body) {
+        const text = getElementText(target);
+        if (text && text.length > 0) {
+          speakWithHighlight(text, target);
+          showMiniToast('🔊 ' + text.slice(0, 40));
+          break;
+        }
+        target = target.parentElement;
+      }
+    }
+  }
+
+  function showCtrlIndicator(show) {
+    if (show) {
+      if (!ctrlIndicator) {
+        ctrlIndicator = document.createElement('div');
+        ctrlIndicator.id = '__gazelink_ctrl_indicator__';
+        Object.assign(ctrlIndicator.style, {
+          position: 'fixed', bottom: '20px', left: '20px',
+          background: 'rgba(168,85,247,0.9)', color: 'white',
+          padding: '8px 16px', borderRadius: '8px',
+          fontSize: '13px', fontFamily: 'monospace',
+          zIndex: '2147483647', fontWeight: 'bold',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(8px)',
+          pointerEvents: 'none'
+        });
+        ctrlIndicator.textContent = '🔊 Hold Ctrl to read text';
+        document.documentElement.appendChild(ctrlIndicator);
+      }
+      ctrlIndicator.style.display = 'block';
+    } else {
+      if (ctrlIndicator) {
+        ctrlIndicator.style.display = 'none';
+      }
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+
+    if (e.key === 'Control' || e.key === 'Ctrl') {
+      if (!isCtrlPressed) {
+        isCtrlPressed = true;
+        showCtrlIndicator(true);
+        document.body.style.cursor = 'help';
+      }
+    }
+  }
+
+  function handleKeyUp(e) {
+    if (e.key === 'Control' || e.key === 'Ctrl') {
+      isCtrlPressed = false;
+      showCtrlIndicator(false);
+      document.body.style.cursor = '';
+
+      if (holdSpeechTimeout) {
+        clearTimeout(holdSpeechTimeout);
+        holdSpeechTimeout = null;
+      }
+
+      currentHoldTarget = null;
+      lastSpokenHoldText = null;
+    }
+  }
+
+  function handleMouseMoveForHold(e) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+    if (!isCtrlPressed) return;
+
+    let target = e.target;
+
+    while (target && target !== document.body) {
+      const text = getElementText(target);
+      if (text && text.length > 0) {
+        speakTextOnHold(target);
+        break;
+      }
+      target = target.parentElement;
+    }
+  }
+
+  function startButtonHoldListener() {
+    if (!settings.doButtonHoldSpeech) return;
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('mousemove', handleMouseMoveForHold);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handleF2Press();
+      }
+    });
+
+    showNotification('💡 Hold Ctrl + hover to read with highlight | Press F2 to read at cursor');
+  }
+
+  function stopButtonHoldListener() {
+    document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
+    document.removeEventListener('mousemove', handleMouseMoveForHold);
+
+    if (holdSpeechTimeout) {
+      clearTimeout(holdSpeechTimeout);
+      holdSpeechTimeout = null;
+    }
+
+    if (ctrlIndicator) {
+      ctrlIndicator.remove();
+      ctrlIndicator = null;
+    }
+
+    currentHoldTarget = null;
+    lastSpokenHoldText = null;
+    isCtrlPressed = false;
+    document.body.style.cursor = '';
+    hideHighlight();
+  }
 
   // ─── Message listener (popup → content) ──────────────────────────────────────
 
@@ -1014,16 +1191,22 @@
     }
     if (msg.type === 'SETTINGS_UPDATE') {
       settings = { ...settings, ...msg.settings };
-      if (settings.enabled) { connectWS(); showHUD(); startHourlyBreakReminder(); }
+      if (settings.enabled) {
+        connectWS();
+        showHUD();
+        startHourlyBreakReminder();
+        if (settings.doButtonHoldSpeech) {
+          startButtonHoldListener();
+        } else {
+          stopButtonHoldListener();
+        }
+      }
       else fullStop();
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
     if (msg.type === 'STOP_TRACKING') {
       settings.enabled = false;
       fullStop();
-    }
-    if (msg.type === 'CALIBRATE') {
-      setupCalibration();
     }
     if (msg.type === 'NIGHT_SHIFT_UPDATE') {
       const { nightShift, nightShiftStart, nightShiftEnd, nightShiftWarmth, nightShiftBrightness } = msg;
@@ -1046,7 +1229,14 @@
       currentBreakStage = result.gazelink_drowsy.stage ?? 0;
     }
 
-    if (settings.enabled) { connectWS(); showHUD(); startHourlyBreakReminder(); }
+    if (settings.enabled) {
+      connectWS();
+      showHUD();
+      startHourlyBreakReminder();
+      if (settings.doButtonHoldSpeech) {
+        startButtonHoldListener();
+      }
+    }
     if (settings.nightShift) startNightShiftWatch();
   });
 
