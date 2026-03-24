@@ -1,4 +1,4 @@
-(function () {
+(function() {
   'use strict';
 
   const WS_URL = 'ws://localhost:8765';
@@ -14,6 +14,8 @@
     doGlow: true,
     doTooltip: true,
     doOpenOnDwell: false,
+    doButtonHoldSpeech: true,
+    speechMode: 'ctrl',
     glowColor: '#a855f7',
     showGazeDot: true,
     nightShift: false,
@@ -38,8 +40,6 @@
   let nightShiftCheckTimer = null;
 
   // ─── Drowsiness state ─────────────────────────────────────────────────────────
-  // Thresholds in "drowsy frames received". At 25fps with ~50% drowsy detection
-  // rate, stage1≈12s, stage2≈24s, stage3≈42s. Tune these to taste.
 
   const DROWSY_STAGE_1 = 20;
   const DROWSY_STAGE_2 = 40;
@@ -48,9 +48,9 @@
   let drowsyCount = 0;
   let currentBreakStage = 0;
   let breakScreenVisible = false;
-  
+
   function saveDrowsyState() {
-  chrome.storage.local.set({ gazelink_drowsy: { count: drowsyCount, stage: currentBreakStage } });
+    chrome.storage.local.set({ gazelink_drowsy: { count: drowsyCount, stage: currentBreakStage } });
   }
 
   // ─── WebSocket ────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       console.log('[GazeLink] WS connected');
       wsConnected = true;
-      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'connected' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'connected' }).catch(() => { });
     });
 
     ws.addEventListener('message', (event) => {
@@ -88,11 +88,11 @@
 
     ws.addEventListener('close', () => {
       ws = null; wsConnected = false;
-      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'disconnected' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'WS_STATUS', status: 'disconnected' }).catch(() => { });
       if (settings.enabled) scheduleReconnect();
     });
 
-    ws.addEventListener('error', () => {});
+    ws.addEventListener('error', () => { });
   }
 
   function disconnectWS() {
@@ -198,9 +198,9 @@
 
   function updateDrowsyOverlay() {
     let color = '#22c55e', label = 'Alert';
-    if      (drowsyCount >= DROWSY_STAGE_3) { color = '#7c3aed'; label = 'Sleep!';     }
+    if (drowsyCount >= DROWSY_STAGE_3) { color = '#7c3aed'; label = 'Sleep!'; }
     else if (drowsyCount >= DROWSY_STAGE_2) { color = '#ef4444'; label = 'Very Tired'; }
-    else if (drowsyCount >= DROWSY_STAGE_1) { color = '#f59e0b'; label = 'Tired';      }
+    else if (drowsyCount >= DROWSY_STAGE_1) { color = '#f59e0b'; label = 'Tired'; }
     drowsyOverlay.style.color = color;
     drowsyOverlay.style.borderColor = color;
     drowsyOverlay.textContent = `😴 ${label} · ${drowsyCount}`;
@@ -247,7 +247,28 @@
         else { handleDistanceEffects(currentDistance); showNotification(`🔍 Font scaled for ${currentDistance.toFixed(0)}cm`); }
       }, 1000);
     }
+
+    if (e.key === 'Alt') return;
+
+    // ไม่พูดปุ่ม Control 
+    if (e.key === 'Control' || e.key === 'Ctrl') return;
+
+    if (!settings.enabled) return;
+
+    const currentKey = e.key;
+    if (lastSpokenKey === currentKey) {
+      if (keySpeechTimeout) clearTimeout(keySpeechTimeout);
+      keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 200);
+      return;
+    }
+
+    lastSpokenKey = currentKey;
+    keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 500);
+
+    const thaiName = getKeyNameThai(e.key, e.code);
+    speakThai(thaiName);
   });
+
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Alt') { clearTimeout(altHoldTimer); altHoldTimer = null; altHoldTriggered = false; }
   });
@@ -297,8 +318,8 @@
     let node = el;
     while (node && node !== document.body) {
       if (node.tagName === 'A' || node.tagName === 'BUTTON' ||
-          node.getAttribute?.('role') === 'button' ||
-          node.getAttribute?.('role') === 'link' || node.onclick) return node;
+        node.getAttribute?.('role') === 'button' ||
+        node.getAttribute?.('role') === 'link' || node.onclick) return node;
       node = node.parentElement;
     }
     return null;
@@ -358,7 +379,7 @@
     const now = new Date();
     const cur = now.getHours() * 60 + now.getMinutes();
     const [sh, sm] = (settings.nightShiftStart || '20:00').split(':').map(Number);
-    const [eh, em] = (settings.nightShiftEnd   || '07:00').split(':').map(Number);
+    const [eh, em] = (settings.nightShiftEnd || '07:00').split(':').map(Number);
     const s = sh * 60 + sm, e = eh * 60 + em;
     return s > e ? (cur >= s || cur < e) : (cur >= s && cur < e);
   }
@@ -444,7 +465,7 @@
       <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">${cfg.message}</p>
       <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">${cfg.sub}</p>
       <div style="width:100%;height:4px;background:rgba(255,255,255,0.08);border-radius:4px;margin-bottom:28px;overflow:hidden">
-        <div style="height:100%;width:${(stage/3)*100}%;background:${cfg.color};border-radius:4px"></div>
+        <div style="height:100%;width:${(stage / 3) * 100}%;background:${cfg.color};border-radius:4px"></div>
       </div>
       <button id="__gazelink_break_btn__" style="
         background:${cfg.color};color:white;border:none;padding:13px 32px;
@@ -474,12 +495,9 @@
     document.removeEventListener('keydown', escDismiss);
 
     if (currentBreakStage >= 3) {
-      // Final stage — user acknowledged, full reset
       drowsyCount = 0;
       currentBreakStage = 0;
     }
-    // Stages 1 & 2: do nothing — count stays where it is and
-    // keeps climbing toward the next stage naturally.
 
     updateDrowsyOverlay();
     saveDrowsyState();
@@ -489,58 +507,15 @@
 
   function handleDrowsy(isDrowsy) {
     if (!isDrowsy) return;
-    if (breakScreenVisible) return; // don't keep counting while break screen is shown
+    if (breakScreenVisible) return;
     drowsyCount++;
     updateDrowsyOverlay();
     saveDrowsyState();
 
-    if      (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
+    if (drowsyCount >= DROWSY_STAGE_3 && currentBreakStage < 3) { currentBreakStage = 3; showBreakScreen(3); }
     else if (drowsyCount >= DROWSY_STAGE_2 && currentBreakStage < 2) { currentBreakStage = 2; showBreakScreen(2); }
     else if (drowsyCount >= DROWSY_STAGE_1 && currentBreakStage < 1) { currentBreakStage = 1; showBreakScreen(1); }
   }
-
-  // ─── Calibration ─────────────────────────────────────────────────────────────
-
-  // function setupCalibration() {
-  //   const grid = 3, points = [];
-  //   for (let i = 0; i < grid; i++)
-  //     for (let j = 0; j < grid; j++)
-  //       points.push([i / (grid - 1), j / (grid - 1)]);
-
-  //   let index = 0, sampleCount = 0;
-  //   const maxSamples = 5;
-
-  //   const calDot = document.createElement('div');
-  //   Object.assign(calDot.style, {
-  //     position: 'fixed', width: '40px', height: '40px', borderRadius: '50%',
-  //     background: settings.glowColor, zIndex: '2147483647', cursor: 'pointer',
-  //     transition: 'all 0.2s ease', boxShadow: `0 0 16px 4px ${settings.glowColor}`,
-  //   });
-  //   const calLabel = document.createElement('div');
-  //   Object.assign(calLabel.style, {
-  //     position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-  //     color: 'white', fontFamily: 'monospace', fontSize: '14px', zIndex: '2147483647',
-  //     background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: '8px', pointerEvents: 'none',
-  //   });
-  //   calLabel.textContent = 'Click each dot to calibrate (5 clicks each)';
-  //   document.documentElement.appendChild(calLabel);
-  //   document.documentElement.appendChild(calDot);
-
-  //   function showNext() {
-  //     if (index >= points.length) { calDot.remove(); calLabel.remove(); showNotification('✅ Calibration complete!'); return; }
-  //     const [px, py] = points[index];
-  //     calDot.style.left = (px * (window.innerWidth - 40)) + 'px';
-  //     calDot.style.top  = (py * (window.innerHeight - 40)) + 'px';
-  //     sampleCount = 0;
-  //   }
-  //   calDot.addEventListener('click', () => {
-  //     sampleCount++;
-  //     calDot.style.background = sampleCount % 2 === 0 ? settings.glowColor : '#fff';
-  //     calLabel.textContent = `Point ${index + 1}/${points.length} — click ${maxSamples - sampleCount} more`;
-  //     if (sampleCount >= maxSamples) { index++; showNext(); }
-  //   });
-  //   showNext();
-  // }
 
   // ─── Notification ─────────────────────────────────────────────────────────────
 
@@ -583,6 +558,628 @@
     drowsyCount = 0;
     currentBreakStage = 0;
     updateDrowsyOverlay();
+    stopHourlyBreakReminder();
+    stopButtonHoldListener();
+  }
+
+  // ─── Hourly Break Reminder ─────────────────────────────────────────────────────────
+
+  let lastBreakReminder = null;
+  let breakReminderInterval = null;
+  let breakReminderScreenVisible = false;
+  const ONE_HOUR_MS = 20 * 60 * 1000;
+
+  const hourBreakScreen = document.createElement('div');
+  hourBreakScreen.id = '__gazelink_hour_break__';
+  Object.assign(hourBreakScreen.style, {
+    position: 'fixed', inset: '0', zIndex: '2147483644',
+    display: 'none', alignItems: 'center', justifyContent: 'center',
+    backdropFilter: 'blur(12px)', webkitBackdropFilter: 'blur(12px)',
+    background: 'rgba(0,0,0,0.75)', opacity: '0',
+    transition: 'opacity 0.4s ease',
+  });
+
+  const hourBreakCard = document.createElement('div');
+  Object.assign(hourBreakCard.style, {
+    background: 'rgba(20,20,35,0.98)', border: '1px solid rgba(168,85,247,0.5)',
+    borderRadius: '20px', padding: '48px 40px', maxWidth: '440px', width: '90%',
+    textAlign: 'center', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+    transform: 'translateY(20px)', transition: 'transform 0.4s ease',
+  });
+
+  hourBreakScreen.appendChild(hourBreakCard);
+  document.documentElement.appendChild(hourBreakScreen);
+
+  function showHourBreakReminder() {
+    if (breakReminderScreenVisible) return;
+    if (!settings.enabled) return;
+
+    breakReminderScreenVisible = true;
+
+    hourBreakCard.innerHTML = `
+    <div style="font-size:64px;margin-bottom:16px;line-height:1">⏰</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#a855f7;font-weight:700;margin-bottom:12px">
+      GazeLink · Eye Health Reminder
+    </div>
+    <h2 style="color:#f0f0ff;font-size:22px;font-weight:700;margin-bottom:14px;line-height:1.3">Time for a Break!</h2>
+    <p style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:10px">
+      You've been using the screen for 20 minutes continuously.
+    </p>
+    <p style="color:#666;font-size:12px;line-height:1.6;margin-bottom:32px">
+        Give your eyes a break every 20 minutes. Look at something 6 meters away from the screen for 20 seconds. 👁️
+    </p>
+    <button id="__gazelink_hour_break_btn__" style="
+      background:#a855f7;color:white;border:none;padding:13px 32px;
+      border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;
+      width:100%;letter-spacing:0.3px;margin-bottom:12px
+    ">I'll take a break ✓</button>
+    <button id="__gazelink_hour_break_snooze__" style="
+      background:transparent;color:#888;border:1px solid #444;
+      padding:10px 24px;border-radius:12px;font-size:12px;
+      cursor:pointer;width:100%
+    ">Snooze (15 min)</button>
+  `;
+
+    hourBreakScreen.style.display = 'flex';
+    requestAnimationFrame(() => {
+      hourBreakScreen.style.opacity = '1';
+      hourBreakCard.style.transform = 'translateY(0)';
+    });
+
+    document.getElementById('__gazelink_hour_break_btn__').addEventListener('click', () => {
+      dismissHourBreakReminder();
+    });
+
+    document.getElementById('__gazelink_hour_break_snooze__').addEventListener('click', () => {
+      dismissHourBreakReminder();
+      if (breakReminderInterval) clearInterval(breakReminderInterval);
+      lastBreakReminder = Date.now();
+      breakReminderInterval = setInterval(() => {
+        checkHourlyBreak();
+      }, 60000);
+    });
+  }
+
+  function dismissHourBreakReminder() {
+    hourBreakScreen.style.opacity = '0';
+    hourBreakCard.style.transform = 'translateY(20px)';
+    setTimeout(() => {
+      hourBreakScreen.style.display = 'none';
+      breakReminderScreenVisible = false;
+    }, 400);
+  }
+
+  function checkHourlyBreak() {
+    if (!settings.enabled) return;
+    if (breakReminderScreenVisible) return;
+    if (breakScreenVisible) return;
+
+    const now = Date.now();
+    if (!lastBreakReminder) {
+      lastBreakReminder = now;
+      return;
+    }
+
+    if (now - lastBreakReminder >= ONE_HOUR_MS) {
+      showHourBreakReminder();
+      lastBreakReminder = now;
+    }
+  }
+
+  function startHourlyBreakReminder() {
+    if (breakReminderInterval) clearInterval(breakReminderInterval);
+    lastBreakReminder = Date.now();
+    breakReminderInterval = setInterval(() => {
+      checkHourlyBreak();
+    }, 60000);
+  }
+
+  function stopHourlyBreakReminder() {
+    if (breakReminderInterval) {
+      clearInterval(breakReminderInterval);
+      breakReminderInterval = null;
+    }
+    if (hourBreakScreen.style.display !== 'none') {
+      dismissHourBreakReminder();
+    }
+  }
+
+  // ─── Keyboard speech (Thai voice) ──────────────────────────────────────────────
+
+  let lastSpokenKey = null;
+  let keySpeechTimeout = null;
+
+  function speakThai(text) {
+    if (!settings.enabled) return;
+    speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'th-TH';
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.8;
+
+    let voices = [];
+    const setVoice = () => {
+      voices = speechSynthesis.getVoices();
+      const thaiVoice = voices.find(voice =>
+        voice.lang === 'th-TH' ||
+        voice.lang === 'th' ||
+        voice.name.includes('Thai') ||
+        voice.name.includes('Kanya')
+      );
+      if (thaiVoice) utterance.voice = thaiVoice;
+      speechSynthesis.speak(utterance);
+    };
+
+    if (speechSynthesis.getVoices().length > 0) {
+      setVoice();
+    } else {
+      speechSynthesis.onvoiceschanged = setVoice;
+    }
+  }
+
+  function getKeyNameThai(key, code) {
+    if (key.length === 1 && /[A-Za-z]/.test(key)) {
+      const thaiMap = {
+        'A': 'เอ', 'B': 'บี', 'C': 'ซี', 'D': 'ดี', 'E': 'อี',
+        'F': 'เอฟ', 'G': 'จี', 'H': 'เอช', 'I': 'ไอ', 'J': 'เจ',
+        'K': 'เค', 'L': 'แอล', 'M': 'เอ็ม', 'N': 'เอ็น', 'O': 'โอ',
+        'P': 'พี', 'Q': 'คิว', 'R': 'อาร์', 'S': 'เอส', 'T': 'ที',
+        'U': 'ยู', 'V': 'วี', 'W': 'ดับเบิลยู', 'X': 'เอกซ์', 'Y': 'วาย', 'Z': 'แซด'
+      };
+      return thaiMap[key.toUpperCase()] || key;
+    }
+
+    if (/[0-9]/.test(key)) {
+      const numMap = {
+        '0': 'ศูนย์', '1': 'หนึ่ง', '2': 'สอง', '3': 'สาม', '4': 'สี่',
+        '5': 'ห้า', '6': 'หก', '7': 'เจ็ด', '8': 'แปด', '9': 'เก้า'
+      };
+      return numMap[key] || key;
+    }
+
+    const specialKeys = {
+      'Enter': 'Enter',
+      'Space': 'สเปซบาร์',
+      'Backspace': 'แบ็คสเปซ',
+      'Delete': 'ดีลีท',
+      'Tab': 'แท็บ',
+      'Escape': 'เอสเคป',
+      'ArrowUp': 'ลูกศรขึ้น',
+      'ArrowDown': 'ลูกศรลง',
+      'ArrowLeft': 'ลูกศรซ้าย',
+      'ArrowRight': 'ลูกศรขวา',
+      'Shift': 'ชิฟต์',
+      'Control': 'คอนโทรล',
+      'Alt': 'อัลท์',
+      'Meta': 'วินโดวส์',
+      'CapsLock': 'แคปล็อก',
+      'Home': 'โฮม',
+      'End': 'เอนด์',
+      'PageUp': 'เพจอัพ',
+      'PageDown': 'เพจดาวน์',
+      'Insert': 'อินเสิร์ท',
+      'F1': 'เอฟหนึ่ง',
+      'F2': 'เอฟสอง',
+      'F3': 'เอฟสาม',
+      'F4': 'เอฟสี่',
+      'F5': 'เอฟห้า',
+      'F6': 'เอฟหก',
+      'F7': 'เอฟเจ็ด',
+      'F8': 'เอฟแปด',
+      'F9': 'เอฟเก้า',
+      'F10': 'เอฟสิบ',
+      'F11': 'เอฟสิบเอ็ด',
+      'F12': 'เอฟสิบสอง',
+    };
+
+    return specialKeys[key] || key;
+  }
+
+  // ─── Text-to-Speech with Button Hold (Ctrl) + Highlight ──────────────────────
+
+  let isCtrlPressed = false;
+  let ctrlHoldTimer = null;
+  let lastSpokenHoldText = null;
+  let holdSpeechTimeout = null;
+  let isSpeakingHoldText = false;
+  let currentHoldTarget = null;
+  let currentUtterance = null;
+  let ctrlIndicator = null;
+
+  // สร้าง element สำหรับ highlight
+  const highlightSpan = document.createElement('span');
+  highlightSpan.id = '__gazelink_highlight__';
+  Object.assign(highlightSpan.style, {
+    position: 'absolute',
+    backgroundColor: 'rgba(168, 85, 247, 0.4)',
+    borderBottom: `2px solid ${settings.glowColor}`,
+    borderRadius: '2px',
+    pointerEvents: 'none',
+    zIndex: '2147483646',
+    transition: 'all 0.05s linear',
+    boxShadow: '0 0 4px rgba(168,85,247,0.5)',
+    display: 'none'
+  });
+  document.documentElement.appendChild(highlightSpan);
+
+  function getElementText(element) {
+    if (element.hasAttribute('data-gazelink-speech')) {
+      return element.getAttribute('data-gazelink-speech');
+    } else if (element.hasAttribute('title')) {
+      return element.getAttribute('title');
+    } else if (element.hasAttribute('alt')) {
+      return element.getAttribute('alt');
+    } else if (element.hasAttribute('aria-label')) {
+      return element.getAttribute('aria-label');
+    } else {
+      let rawText = element.textContent || element.innerText || '';
+      rawText = rawText.trim();
+      if (rawText.length > 100) {
+        rawText = rawText.slice(0, 100) + '...';
+      }
+      return rawText;
+    }
+  }
+
+  function splitIntoWords(text) {
+    const thaiWordPattern = /[\u0E00-\u0E7F]+/g;
+    const englishWordPattern = /[a-zA-Z]+/g;
+    const numberPattern = /[0-9]+/g;
+
+    let matches = [];
+    let match;
+
+    while ((match = thaiWordPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+    }
+    while ((match = englishWordPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+    }
+    while ((match = numberPattern.exec(text)) !== null) {
+      matches.push({ start: match.index, end: match.index + match[0].length, text: match[0] });
+    }
+
+    matches.sort((a, b) => a.start - b.start);
+
+    let merged = [];
+    for (let i = 0; i < matches.length; i++) {
+      if (merged.length === 0) {
+        merged.push(matches[i]);
+      } else {
+        let last = merged[merged.length - 1];
+        if (matches[i].start - last.end <= 2 &&
+          /[\u0E00-\u0E7F]/.test(last.text) &&
+          /[\u0E00-\u0E7F]/.test(matches[i].text)) {
+          last.end = matches[i].end;
+          last.text = text.substring(last.start, last.end);
+        } else {
+          merged.push(matches[i]);
+        }
+      }
+    }
+
+    return merged;
+  }
+
+  function findTextNodeAtPosition(element, position) {
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: function(node) {
+          if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
+          if (node.parentElement?.tagName === 'SCRIPT' || node.parentElement?.tagName === 'STYLE') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    let currentNode;
+    let currentPos = 0;
+
+    while (currentNode = walker.nextNode()) {
+      const nodeText = currentNode.textContent;
+      const nodeLength = nodeText.length;
+
+      if (position >= currentPos && position < currentPos + nodeLength) {
+        const offset = position - currentPos;
+        return { node: currentNode, start: offset, end: offset + 1 };
+      }
+
+      currentPos += nodeLength;
+    }
+
+    return null;
+  }
+
+  function highlightWordRange(element, start, end) {
+    try {
+      const range = document.createRange();
+      const textNodeInfo = findTextNodeAtPosition(element, start);
+
+      if (textNodeInfo && textNodeInfo.node) {
+        range.setStart(textNodeInfo.node, textNodeInfo.start);
+        range.setEnd(textNodeInfo.node, textNodeInfo.end);
+
+        const rects = range.getClientRects();
+        if (rects.length > 0) {
+          const rect = rects[0];
+          highlightSpan.style.display = 'block';
+          highlightSpan.style.left = rect.left + 'px';
+          highlightSpan.style.top = rect.top + 'px';
+          highlightSpan.style.width = rect.width + 'px';
+          highlightSpan.style.height = rect.height + 'px';
+
+          if (rect.top < 100 || rect.bottom > window.innerHeight - 100) {
+            rect.element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+  function highlightWord(word, element, fullText) {
+    if (!word || !element) return;
+    try {
+      const textContent = element.textContent || element.innerText;
+      const wordIndex = textContent.indexOf(word);
+      if (wordIndex !== -1) {
+        highlightWordRange(element, wordIndex, wordIndex + word.length);
+      }
+    } catch (e) { }
+  }
+
+  function hideHighlight() {
+    highlightSpan.style.display = 'none';
+  }
+
+  function speakWithHighlight(text, element) {
+    if (!text || !element) return;
+
+    if (currentUtterance) {
+      speechSynthesis.cancel();
+      hideHighlight();
+    }
+
+    const words = splitIntoWords(text);
+
+    if (words.length === 0) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      setupUtterance(utterance, element);
+      speechSynthesis.speak(utterance);
+      return;
+    }
+
+    let currentWordPos = 0;
+
+    function speakNextWord() {
+      if (currentWordPos >= words.length) {
+        hideHighlight();
+        currentUtterance = null;
+        return;
+      }
+
+      const wordObj = words[currentWordPos];
+      const wordText = wordObj.text;
+
+      highlightWord(wordText, element, text);
+
+      const utterance = new SpeechSynthesisUtterance(wordText);
+
+      utterance.onstart = () => {
+        currentUtterance = utterance;
+      };
+
+      utterance.onend = () => {
+        currentWordPos++;
+        setTimeout(() => {
+          if (currentUtterance === utterance) {
+            speakNextWord();
+          }
+        }, 50);
+      };
+
+      utterance.onerror = () => {
+        currentWordPos++;
+        speakNextWord();
+      };
+
+      setupUtterance(utterance, element);
+      speechSynthesis.speak(utterance);
+    }
+
+    speakNextWord();
+  }
+
+  function setupUtterance(utterance, element) {
+    utterance.lang = 'th-TH';
+    utterance.rate = 0.8;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.9;
+
+    const voices = speechSynthesis.getVoices();
+    const thaiVoice = voices.find(voice =>
+      voice.lang === 'th-TH' ||
+      voice.lang === 'th' ||
+      voice.name.includes('Thai') ||
+      voice.name.includes('Kanya')
+    );
+    if (thaiVoice) utterance.voice = thaiVoice;
+  }
+
+  function showMiniToast(text) {
+    const toast = document.createElement('div');
+    Object.assign(toast.style, {
+      position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(0,0,0,0.85)', color: '#fff', padding: '6px 12px',
+      borderRadius: '20px', fontSize: '12px', fontFamily: 'sans-serif',
+      zIndex: '2147483647', pointerEvents: 'none', whiteSpace: 'nowrap',
+      maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis',
+      backdropFilter: 'blur(4px)'
+    });
+    toast.textContent = text;
+    document.documentElement.appendChild(toast);
+    setTimeout(() => toast.remove(), 1500);
+  }
+
+  function speakTextOnHold(element) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+    if (!isCtrlPressed) return;
+
+    const textToSpeak = getElementText(element);
+    if (!textToSpeak || textToSpeak.length === 0) return;
+
+    if (currentHoldTarget === element && lastSpokenHoldText === textToSpeak) {
+      return;
+    }
+
+    currentHoldTarget = element;
+    lastSpokenHoldText = textToSpeak;
+
+    if (holdSpeechTimeout) clearTimeout(holdSpeechTimeout);
+
+    holdSpeechTimeout = setTimeout(() => {
+      speakWithHighlight(textToSpeak, element);
+      showMiniToast('🔊 ' + textToSpeak.slice(0, 40));
+    }, 150);
+  }
+
+  function handleF2Press() {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+
+    const mouseX = window.event?.clientX || 0;
+    const mouseY = window.event?.clientY || 0;
+    const elementAtCursor = document.elementFromPoint(mouseX, mouseY);
+
+    if (elementAtCursor) {
+      let target = elementAtCursor;
+      while (target && target !== document.body) {
+        const text = getElementText(target);
+        if (text && text.length > 0) {
+          speakWithHighlight(text, target);
+          showMiniToast('🔊 ' + text.slice(0, 40));
+          break;
+        }
+        target = target.parentElement;
+      }
+    }
+  }
+
+  function showCtrlIndicator(show) {
+    if (show) {
+      if (!ctrlIndicator) {
+        ctrlIndicator = document.createElement('div');
+        ctrlIndicator.id = '__gazelink_ctrl_indicator__';
+        Object.assign(ctrlIndicator.style, {
+          position: 'fixed', bottom: '20px', left: '20px',
+          background: 'rgba(168,85,247,0.9)', color: 'white',
+          padding: '8px 16px', borderRadius: '8px',
+          fontSize: '13px', fontFamily: 'monospace',
+          zIndex: '2147483647', fontWeight: 'bold',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(8px)',
+          pointerEvents: 'none'
+        });
+        ctrlIndicator.textContent = '🔊 Hold Ctrl to read text';
+        document.documentElement.appendChild(ctrlIndicator);
+      }
+      ctrlIndicator.style.display = 'block';
+    } else {
+      if (ctrlIndicator) {
+        ctrlIndicator.style.display = 'none';
+      }
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+
+    if (e.key === 'Control' || e.key === 'Ctrl') {
+      if (!isCtrlPressed) {
+        isCtrlPressed = true;
+        showCtrlIndicator(true);
+        document.body.style.cursor = 'help';
+      }
+    }
+  }
+
+  function handleKeyUp(e) {
+    if (e.key === 'Control' || e.key === 'Ctrl') {
+      isCtrlPressed = false;
+      showCtrlIndicator(false);
+      document.body.style.cursor = '';
+
+      if (holdSpeechTimeout) {
+        clearTimeout(holdSpeechTimeout);
+        holdSpeechTimeout = null;
+      }
+
+      currentHoldTarget = null;
+      lastSpokenHoldText = null;
+    }
+  }
+
+  function handleMouseMoveForHold(e) {
+    if (!settings.enabled) return;
+    if (!settings.doButtonHoldSpeech) return;
+    if (!isCtrlPressed) return;
+
+    let target = e.target;
+
+    while (target && target !== document.body) {
+      const text = getElementText(target);
+      if (text && text.length > 0) {
+        speakTextOnHold(target);
+        break;
+      }
+      target = target.parentElement;
+    }
+  }
+
+  function startButtonHoldListener() {
+    if (!settings.doButtonHoldSpeech) return;
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    document.addEventListener('mousemove', handleMouseMoveForHold);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handleF2Press();
+      }
+    });
+
+    showNotification('💡 Hold Ctrl + hover to read with highlight | Press F2 to read at cursor');
+  }
+
+  function stopButtonHoldListener() {
+    document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
+    document.removeEventListener('mousemove', handleMouseMoveForHold);
+
+    if (holdSpeechTimeout) {
+      clearTimeout(holdSpeechTimeout);
+      holdSpeechTimeout = null;
+    }
+
+    if (ctrlIndicator) {
+      ctrlIndicator.remove();
+      ctrlIndicator = null;
+    }
+
+    currentHoldTarget = null;
+    lastSpokenHoldText = null;
+    isCtrlPressed = false;
+    document.body.style.cursor = '';
+    hideHighlight();
   }
 
   // ─── Message listener (popup → content) ──────────────────────────────────────
@@ -594,7 +1191,16 @@
     }
     if (msg.type === 'SETTINGS_UPDATE') {
       settings = { ...settings, ...msg.settings };
-      if (settings.enabled) { connectWS(); showHUD(); }
+      if (settings.enabled) {
+        connectWS();
+        showHUD();
+        startHourlyBreakReminder();
+        if (settings.doButtonHoldSpeech) {
+          startButtonHoldListener();
+        } else {
+          stopButtonHoldListener();
+        }
+      }
       else fullStop();
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
@@ -602,15 +1208,12 @@
       settings.enabled = false;
       fullStop();
     }
-    if (msg.type === 'CALIBRATE') {
-      setupCalibration();
-    }
     if (msg.type === 'NIGHT_SHIFT_UPDATE') {
       const { nightShift, nightShiftStart, nightShiftEnd, nightShiftWarmth, nightShiftBrightness } = msg;
-      if (nightShift           !== undefined) settings.nightShift           = nightShift;
-      if (nightShiftStart      !== undefined) settings.nightShiftStart      = nightShiftStart;
-      if (nightShiftEnd        !== undefined) settings.nightShiftEnd        = nightShiftEnd;
-      if (nightShiftWarmth     !== undefined) settings.nightShiftWarmth     = nightShiftWarmth;
+      if (nightShift !== undefined) settings.nightShift = nightShift;
+      if (nightShiftStart !== undefined) settings.nightShiftStart = nightShiftStart;
+      if (nightShiftEnd !== undefined) settings.nightShiftEnd = nightShiftEnd;
+      if (nightShiftWarmth !== undefined) settings.nightShiftWarmth = nightShiftWarmth;
       if (nightShiftBrightness !== undefined) settings.nightShiftBrightness = nightShiftBrightness;
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();
     }
@@ -626,7 +1229,14 @@
       currentBreakStage = result.gazelink_drowsy.stage ?? 0;
     }
 
-    if (settings.enabled) { connectWS(); showHUD(); }
+    if (settings.enabled) {
+      connectWS();
+      showHUD();
+      startHourlyBreakReminder();
+      if (settings.doButtonHoldSpeech) {
+        startButtonHoldListener();
+      }
+    }
     if (settings.nightShift) startNightShiftWatch();
   });
 

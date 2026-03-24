@@ -1,26 +1,24 @@
-import sys
-import cv2
-import numpy as np
-import imutils
 import pathlib
+import sys
 import time
 from collections import defaultdict
 
+import cv2
+import imutils
+import numpy as np
 import yaml
-from cvzone.FaceMeshModule import FaceMeshDetector
-from drowsiness import DrowsinessDetector
-from distance import calculate_distance
-from webeyetrack import WebEyeTrack, WebEyeTrackConfig
-from webeyetrack.data_protocols import TrackingStatus
-from webeyetrack.constants import GIT_ROOT
-from webeyetrack import vis
-from ws_bridge import start_bridge, send_gaze
-
-from constants import *
 from calibration_widget import CalibrationWidget
+from constants import *
+from cvzone.FaceMeshModule import FaceMeshDetector
+from distance import calculate_distance
+from drowsiness import DrowsinessDetector
 from gaze_dot_canvas import GazeDotCanvas
+from PyQt5 import QtCore, QtGui, QtWidgets
+from ws_bridge import send_gaze, start_bridge
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+from webeyetrack import WebEyeTrack, WebEyeTrackConfig, vis
+from webeyetrack.constants import GIT_ROOT
+from webeyetrack.data_protocols import TrackingStatus
 
 CWD = pathlib.Path(__file__).parent.resolve()
 
@@ -33,8 +31,9 @@ Before running the script, ensure that you have installed the following:
 """
 
 # Load local configuration
-with open(CWD / 'config.yml', 'r') as f:
+with open(CWD / "config.yml", "r") as f:
     config = yaml.safe_load(f)
+
 
 class App(QtWidgets.QMainWindow):
     gaze_dot_updated = QtCore.pyqtSignal(str, float, float)
@@ -43,7 +42,9 @@ class App(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         # Drowsiness
-        self.drowsiness = DrowsinessDetector('.venv/lib/python3.10/python/webeyetrack/model_weights/face_landmarker_v2_with_blendshapes.task')
+        self.drowsiness = DrowsinessDetector(
+            "/Users/jengcharat/Desktop/GazeExtension/python/webeyetrack/model_weights/face_landmarker_v2_with_blendshapes.task"
+        )
 
         # FaceAge estimator setup
         # self.faceage = FaceAgeEstimator('faceage_model.h5')
@@ -61,10 +62,10 @@ class App(QtWidgets.QMainWindow):
         start_bridge()
 
         # Having state variables
-        self.show_webcam = config['show_webcam']
-        self.show_facial_landmarks = config['show_facial_landmarks']
-        self.show_eye_patch = config['show_eye_patch']
-        
+        self.show_webcam = config["show_webcam"]
+        self.show_facial_landmarks = config["show_facial_landmarks"]
+        self.show_eye_patch = config["show_eye_patch"]
+
         # Set up window properties
         self.setWindowTitle("WebEyeTrack Demo")
         self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
@@ -75,7 +76,9 @@ class App(QtWidgets.QMainWindow):
         self.layout = QtWidgets.QStackedLayout(self.central_widget)
 
         # Add a mouse click event to the central widget
-        self.central_widget.mousePressEvent = lambda event: self.handle_mouse_click(event)
+        self.central_widget.mousePressEvent = lambda event: self.handle_mouse_click(
+            event
+        )
 
         # Add 2D canvas
         self.calibration_canvas = CalibrationWidget()
@@ -95,7 +98,7 @@ class App(QtWidgets.QMainWindow):
         self.add_ui_controls()
 
         # Webcam setup
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(1)
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_webcam)
         self.timer.start(40)  # Update every 40ms
@@ -108,17 +111,19 @@ class App(QtWidgets.QMainWindow):
         self.wet = WebEyeTrack(
             WebEyeTrackConfig(
                 screen_px_dimensions=(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX),
-                screen_cm_dimensions=(SCREEN_WIDTH_MM/10, SCREEN_HEIGHT_MM/10),
-                verbose=config['verbose']
+                screen_cm_dimensions=(SCREEN_WIDTH_MM / 10, SCREEN_HEIGHT_MM / 10),
+                verbose=config["verbose"],
             )
         )
 
         # Compute the hypothetical height based on the frame's window and height to match the WEBCAM_WIDTH
         webcam_height = int(height * WEBCAM_WIDTH / width)
-        
+
         # Webcam overlay
         self.webcam_label = QtWidgets.QLabel(self)
-        self.webcam_label.setGeometry(0, 0, WEBCAM_WIDTH, webcam_height)  # Fixed position
+        self.webcam_label.setGeometry(
+            0, 0, WEBCAM_WIDTH, webcam_height
+        )  # Fixed position
         self.webcam_label.setStyleSheet("background-color: black;")
         self.webcam_label.setParent(self.central_widget)
         self.webcam_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
@@ -132,15 +137,25 @@ class App(QtWidgets.QMainWindow):
 
         # On the bottom right, show the real-time xy coordinates of the gaze dot
         self.gaze_coordinates_label = QtWidgets.QLabel(self)
-        self.gaze_coordinates_label.setGeometry(SCREEN_WIDTH_PX - 260, SCREEN_HEIGHT_PX - 115, 250, 40)
-        self.gaze_coordinates_label.setStyleSheet("background-color: black; color: white; font-size: 16px; padding: 5px;")
+        self.gaze_coordinates_label.setGeometry(
+            SCREEN_WIDTH_PX - 260, SCREEN_HEIGHT_PX - 115, 250, 40
+        )
+        self.gaze_coordinates_label.setStyleSheet(
+            "background-color: black; color: white; font-size: 16px; padding: 5px;"
+        )
         self.gaze_coordinates_label.setParent(self.central_widget)
-        self.gaze_dot_updated.connect(lambda state, x, y: self.gaze_coordinates_label.setText(f"State: {state}, Gaze: ({x:.2f}, {y:.2f})"))
+        self.gaze_dot_updated.connect(
+            lambda state, x, y: self.gaze_coordinates_label.setText(
+                f"State: {state}, Gaze: ({x:.2f}, {y:.2f})"
+            )
+        )
 
         # On the bottom left, show the real-time gaze speed (a dictionary of routine durations in sec)
         self.gaze_speed_label = QtWidgets.QLabel(self)
         self.gaze_speed_label.setGeometry(10, SCREEN_HEIGHT_PX - 225, 250, 150)
-        self.gaze_speed_label.setStyleSheet("background-color: black; color: white; font-size: 16px; padding: 5px;")
+        self.gaze_speed_label.setStyleSheet(
+            "background-color: black; color: white; font-size: 16px; padding: 5px;"
+        )
         self.gaze_speed_label.setParent(self.central_widget)
         # self.gaze_speed_updated.connect(lambda durations: self.gaze_speed_label.setText(f"Speed: {durations}"))
         self.gaze_speed_updated.connect(self.handle_gaze_speed_update)
@@ -173,44 +188,51 @@ class App(QtWidgets.QMainWindow):
             smoothed_durations[key] = avg
 
         # Format the dict to display smoothed durations
-        speed_text = "\n".join([f"{key}: {value:.2f} ms" for key, value in smoothed_durations.items()])
+        speed_text = "\n".join(
+            [f"{key}: {value:.2f} ms" for key, value in smoothed_durations.items()]
+        )
         self.gaze_speed_label.setText(f"Speed:\n{speed_text}")
 
     def handle_mouse_click(self, event):
         # Convert xy pixel coordinates to normalized coordinates
-        x,y = (event.x() / self.width() - 0.5), (event.y() / self.height() - 0.5)
+        x, y = (event.x() / self.width() - 0.5), (event.y() / self.height() - 0.5)
         timestamp = time.time()
         print(f"Mouse clicked at normalized coordinates: ({x:.2f}, {y:.2f})")
 
-        # To avoid spamming the calibration, debounce the click by using the 
+        # To avoid spamming the calibration, debounce the click by using the
         # latest_click_calib
         if self.latest_click_calib is not None:
-            time_diff = timestamp - self.latest_click_calib['timestamp']
-            space_diff = np.linalg.norm(self.latest_click_calib['norm_pog'] - np.array([x, y]))
-            if time_diff < config['calib']['click_interval'] or space_diff < config['calib']['click_dist']:
-                self.latest_click_calib['timestamp'] = timestamp
-                self.latest_click_calib['norm_pog'] = np.array([x, y])
+            time_diff = timestamp - self.latest_click_calib["timestamp"]
+            space_diff = np.linalg.norm(
+                self.latest_click_calib["norm_pog"] - np.array([x, y])
+            )
+            if (
+                time_diff < config["calib"]["click_interval"]
+                or space_diff < config["calib"]["click_dist"]
+            ):
+                self.latest_click_calib["timestamp"] = timestamp
+                self.latest_click_calib["norm_pog"] = np.array([x, y])
                 return
 
         # Use the latest gaze result and the current calibration
         if self.latest_gaze_result is None:
             print("No gaze result available yet.")
             return
-        
+
         returned_calib = self.wet.adapt_from_gaze_results(
             [self.latest_gaze_result],
             np.array([[x, y]]),
             affine_transform=True,
             steps_inner=10,
             inner_lr=1e-4,
-            pt_type='click'
+            pt_type="click",
         )
         print(f"Calibration completed successfully: {returned_calib}.")
 
         # Store the xy and timestamp of the click
         self.latest_click_calib = {
-            'norm_pog': np.array([x, y]),
-            'timestamp': timestamp,
+            "norm_pog": np.array([x, y]),
+            "timestamp": timestamp,
         }
 
     def init_calib(self):
@@ -243,13 +265,13 @@ class App(QtWidgets.QMainWindow):
                 if gaze_results:
                     pogs = [gaze_result.norm_pog for gaze_result in gaze_results]
                     pogs = np.array(pogs)
-                    
+
                     # Compute the mean and standard deviation
                     mean_pog = np.mean(pogs, axis=0)
                     std_pog = np.std(pogs, axis=0)
 
                     print(f"Calibration point {point}: mean={mean_pog}, std={std_pog}")
-                    
+
                     # Get the point closest to the mean
                     distances = np.linalg.norm(pogs - mean_pog, axis=1)
                     closest_index = np.argmin(distances)
@@ -258,25 +280,29 @@ class App(QtWidgets.QMainWindow):
                     calib_norm_pogs.append(point)
                     pred_norm_pogs.append(best_pog)
 
-
             # If we have enough points, we can proceed with the calibration
             if len(calib_gaze_results) < 3:
                 print("Not enough calibration points collected. Please try again.")
                 return
-            
+
             returned_calib = self.wet.adapt_from_gaze_results(
                 calib_gaze_results,
                 np.stack(calib_norm_pogs),
                 affine_transform=True,
                 steps_inner=10,
                 inner_lr=1e-4,
-                pt_type='calib_dot'
+                pt_type="calib_dot",
             )
             print(f"Calibration completed successfully: {returned_calib}.")
 
-            if config['debug']:
-                screen_height_px, screen_width_px = SCREEN_HEIGHT_PX//2, SCREEN_WIDTH_PX//2
-                screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+            if config["debug"]:
+                screen_height_px, screen_width_px = (
+                    SCREEN_HEIGHT_PX // 2,
+                    SCREEN_WIDTH_PX // 2,
+                )
+                screen_img = np.zeros(
+                    (screen_height_px, screen_width_px, 3), dtype=np.uint8
+                )
                 for i, pog in enumerate(calib_norm_pogs):
 
                     gt_tb_pt = pog
@@ -284,16 +310,33 @@ class App(QtWidgets.QMainWindow):
 
                     # Draw the points as circles
                     x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
-                    cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
+                    cv2.circle(
+                        screen_img,
+                        (int(x * screen_width_px), int(y * screen_height_px)),
+                        10,
+                        (0, 0, 255),
+                        -1,
+                    )
                     x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
-                    cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+                    cv2.circle(
+                        screen_img,
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)),
+                        10,
+                        (255, 255, 0),
+                        -1,
+                    )
 
                     # Draw a line between the original calibration point and the resulting calibration point
-                    cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
-                                (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+                    cv2.line(
+                        screen_img,
+                        (int(x * screen_width_px), int(y * screen_height_px)),
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)),
+                        (255, 0, 255),
+                        1,
+                    )
 
                 # Save the image
-                calib_img_path = CWD / 'calibration_result.png'
+                calib_img_path = CWD / "calibration_result.png"
                 cv2.imwrite(str(calib_img_path), screen_img)
 
     def end_calib(self):
@@ -315,8 +358,12 @@ class App(QtWidgets.QMainWindow):
     def add_ui_controls(self):
         # Create a fixed-position rectangle for the UI controls
         self.ui_container = QtWidgets.QWidget(self)
-        self.ui_container.setGeometry(SCREEN_WIDTH_PX - 200, 10, 190, 5*50)  # Top-right corner
-        self.ui_container.setStyleSheet("background-color: rgba(0, 0, 0, 0.7); border-radius: 10px; border: 1px solid white;")
+        self.ui_container.setGeometry(
+            SCREEN_WIDTH_PX - 200, 10, 190, 5 * 50
+        )  # Top-right corner
+        self.ui_container.setStyleSheet(
+            "background-color: rgba(0, 0, 0, 0.7); border-radius: 10px; border: 1px solid white;"
+        )
 
         # Create a layout for buttons inside the container
         layout = QtWidgets.QVBoxLayout(self.ui_container)
@@ -324,34 +371,48 @@ class App(QtWidgets.QMainWindow):
 
         # Add a label
         label = QtWidgets.QLabel("Controls", self)
-        label.setStyleSheet("color: white; border: 0px; font-size: 20px; padding: 0px; margin: 5px;")
+        label.setStyleSheet(
+            "color: white; border: 0px; font-size: 20px; padding: 0px; margin: 5px;"
+        )
         layout.addWidget(label)
 
         # Add a checkbox for showing/hiding the webcam
         self.webcam_checkbox = QtWidgets.QCheckBox("Show Webcam", self)
         self.webcam_checkbox.setChecked(self.show_webcam)
-        self.webcam_checkbox.setStyleSheet("color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;")
+        self.webcam_checkbox.setStyleSheet(
+            "color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;"
+        )
         self.webcam_checkbox.stateChanged.connect(self.toggle_webcam)
         layout.addWidget(self.webcam_checkbox)
 
         # Add a checkbox for showing the facial landmarks
         self.landmarks_checkbox = QtWidgets.QCheckBox("Show Landmarks", self)
         self.landmarks_checkbox.setChecked(self.show_facial_landmarks)
-        self.landmarks_checkbox.setStyleSheet("color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;")
-        self.landmarks_checkbox.stateChanged.connect(lambda state: setattr(self, 'show_facial_landmarks', state == QtCore.Qt.Checked))
+        self.landmarks_checkbox.setStyleSheet(
+            "color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;"
+        )
+        self.landmarks_checkbox.stateChanged.connect(
+            lambda state: setattr(
+                self, "show_facial_landmarks", state == QtCore.Qt.Checked
+            )
+        )
         layout.addWidget(self.landmarks_checkbox)
 
         # Add a checkbox for showing the eye patch
         self.eye_patch_checkbox = QtWidgets.QCheckBox("Show Eye Patch", self)
         self.eye_patch_checkbox.setChecked(self.show_eye_patch)
-        self.eye_patch_checkbox.setStyleSheet("color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;")
+        self.eye_patch_checkbox.setStyleSheet(
+            "color: white; border: 0px; font-size: 16px; padding: 5px; margin: 5px;"
+        )
         self.eye_patch_checkbox.stateChanged.connect(self.toggle_eye_patch)
         layout.addWidget(self.eye_patch_checkbox)
 
         # Add the calibrate button
         calibrate_button = QtWidgets.QPushButton("Calibrate", self)
         calibrate_button.clicked.connect(self.init_calib)
-        calibrate_button.setStyleSheet("color: white; border-radius: 10px; border: 0px; margin: 5px")
+        calibrate_button.setStyleSheet(
+            "color: white; border-radius: 10px; border: 0px; margin: 5px"
+        )
         layout.addWidget(calibrate_button)
 
     def toggle_webcam(self):
@@ -404,14 +465,26 @@ class App(QtWidgets.QMainWindow):
                         eye_patch = cv2.cvtColor(eye_patch, cv2.COLOR_BGR2RGB)
                         h, w, ch = eye_patch.shape
                         bytes_per_line = ch * w
-                        qeye_patch = QtGui.QImage(eye_patch.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
-                        self.eye_patch_label.setPixmap(QtGui.QPixmap.fromImage(qeye_patch))
+                        qeye_patch = QtGui.QImage(
+                            eye_patch.data,
+                            w,
+                            h,
+                            bytes_per_line,
+                            QtGui.QImage.Format_RGB888,
+                        )
+                        self.eye_patch_label.setPixmap(
+                            QtGui.QPixmap.fromImage(qeye_patch)
+                        )
 
                 # If the prediction is outside of [-0.4, 0.4], clip it
                 bound = 0.5
                 y_margin = 0.05
-                gaze_result.norm_pog[0] = np.clip(gaze_result.norm_pog[0], -bound, bound)
-                gaze_result.norm_pog[1] = np.clip(gaze_result.norm_pog[1], -(bound-y_margin), bound-y_margin)
+                gaze_result.norm_pog[0] = np.clip(
+                    gaze_result.norm_pog[0], -bound, bound
+                )
+                gaze_result.norm_pog[1] = np.clip(
+                    gaze_result.norm_pog[1], -(bound - y_margin), bound - y_margin
+                )
 
                 # Make distance calculate every 10 frames instead of every frame for optimization
                 self.frame_count += 1
@@ -443,14 +516,17 @@ class App(QtWidgets.QMainWindow):
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = frame.shape
             bytes_per_line = ch * w
-            qframe = QtGui.QImage(frame.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+            qframe = QtGui.QImage(
+                frame.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888
+            )
             self.webcam_label.setPixmap(QtGui.QPixmap.fromImage(qframe))
 
     def closeEvent(self, event):
         self.cap.release()
         event.accept()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = App()
     window.show()
