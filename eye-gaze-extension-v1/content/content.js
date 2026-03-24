@@ -817,8 +817,8 @@
     } else {
       let rawText = element.textContent || element.innerText || '';
       rawText = rawText.trim();
-      if (rawText.length > 100) {
-        rawText = rawText.slice(0, 100) + '...';
+      if (rawText.length > 1000) {
+        rawText = rawText.slice(0, 1000) + '...';
       }
       return rawText;
     }
@@ -996,20 +996,37 @@
     speakNextWord();
   }
 
+  function detectLang(text) {
+    const thaiChars = (text.match(/[\u0E00-\u0E7F]/g) || []).length;
+    const engChars  = (text.match(/[a-zA-Z]/g) || []).length;
+    if (thaiChars === 0 && engChars === 0) return 'th-TH'; // numbers/symbols → Thai voice
+    return thaiChars >= engChars ? 'th-TH' : 'en-US';
+  }
+
   function setupUtterance(utterance, element) {
-    utterance.lang = 'th-TH';
-    utterance.rate = 0.8;
+    const lang = detectLang(utterance.text || '');
+    utterance.lang  = lang;
+    utterance.rate  = lang === 'th-TH' ? 0.8 : 0.95;
     utterance.pitch = 1.0;
     utterance.volume = 0.9;
 
     const voices = speechSynthesis.getVoices();
-    const thaiVoice = voices.find(voice =>
-      voice.lang === 'th-TH' ||
-      voice.lang === 'th' ||
-      voice.name.includes('Thai') ||
-      voice.name.includes('Kanya')
-    );
-    if (thaiVoice) utterance.voice = thaiVoice;
+
+    if (lang === 'th-TH') {
+      const thaiVoice = voices.find(v =>
+        v.lang === 'th-TH' ||
+        v.lang === 'th' ||
+        v.name.includes('Thai') ||
+        v.name.includes('Kanya')
+      );
+      if (thaiVoice) utterance.voice = thaiVoice;
+    } else {
+      // Prefer a natural English voice; fall back to any en-US/en-GB voice
+      const engVoice = voices.find(v =>
+        v.lang === 'en-US' && (v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Natural'))
+      ) || voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB' || v.lang.startsWith('en'));
+      if (engVoice) utterance.voice = engVoice;
+    }
   }
 
   function showMiniToast(text) {
