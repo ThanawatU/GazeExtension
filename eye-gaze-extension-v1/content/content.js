@@ -668,6 +668,8 @@
   }
 
   function startHourlyBreakReminder() {
+    if (!settings.doHourlyBreak) return;
+
     if (breakReminderInterval) clearInterval(breakReminderInterval);
     lastBreakReminder = Date.now();
     breakReminderInterval = setInterval(() => {
@@ -998,15 +1000,15 @@
 
   function detectLang(text) {
     const thaiChars = (text.match(/[\u0E00-\u0E7F]/g) || []).length;
-    const engChars  = (text.match(/[a-zA-Z]/g) || []).length;
+    const engChars = (text.match(/[a-zA-Z]/g) || []).length;
     if (thaiChars === 0 && engChars === 0) return 'th-TH'; // numbers/symbols → Thai voice
     return thaiChars >= engChars ? 'th-TH' : 'en-US';
   }
 
   function setupUtterance(utterance, element) {
     const lang = detectLang(utterance.text || '');
-    utterance.lang  = lang;
-    utterance.rate  = lang === 'th-TH' ? 0.8 : 0.95;
+    utterance.lang = lang;
+    utterance.rate = lang === 'th-TH' ? 0.8 : 0.95;
     utterance.pitch = 1.0;
     utterance.volume = 0.9;
 
@@ -1126,6 +1128,25 @@
         document.body.style.cursor = 'help';
       }
     }
+
+    // เพิ่มการพูดคีย์บอร์ด - ตรวจสอบ doKeyboardSpeech
+    if (settings.doKeyboardSpeech && e.key !== 'Control' && e.key !== 'Ctrl') {
+      // ไม่พูดปุ่ม Control 
+      if (e.key === 'Control' || e.key === 'Ctrl') return;
+
+      const currentKey = e.key;
+      if (lastSpokenKey === currentKey) {
+        if (keySpeechTimeout) clearTimeout(keySpeechTimeout);
+        keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 200);
+        return;
+      }
+
+      lastSpokenKey = currentKey;
+      keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 500);
+
+      const thaiName = getKeyNameThai(e.key, e.code);
+      speakThai(thaiName);
+    }
   }
 
   function handleKeyUp(e) {
@@ -1217,6 +1238,26 @@
         } else {
           stopButtonHoldListener();
         }
+
+
+        // จัดการ Hourly Break Reminder
+        if (settings.doHourlyBreak) {
+          startHourlyBreakReminder();
+        } else {
+          stopHourlyBreakReminder();
+        }
+
+        // จัดการ Button Hold Speech
+        if (settings.doButtonHoldSpeech) {
+          startButtonHoldListener();
+        } else {
+          stopButtonHoldListener();
+        }
+
+
+
+
+
       }
       else fullStop();
       if (settings.nightShift) startNightShiftWatch(); else stopNightShiftWatch();

@@ -15,6 +15,9 @@ const DEFAULTS = {
   nightShiftBrightness: 95,
   nightShiftStart: '20:00',
   nightShiftEnd: '07:00',
+  doButtonHoldSpeech: true,
+  doKeyboardSpeech: true,
+  doHourlyBreak: true,
 };
 
 let settings = { ...DEFAULTS };
@@ -68,6 +71,33 @@ function applySettingsToUI() {
   document.getElementById('nightShiftWarmthVal').textContent = (settings.nightShiftWarmth ?? 30) + '%';
   document.getElementById('nightShiftBrightness').value = settings.nightShiftBrightness ?? 95;
   document.getElementById('nightShiftBrightnessVal').textContent = (settings.nightShiftBrightness ?? 95) + '%';
+
+  /////////////////////////////////////////////////
+
+  document.getElementById('doButtonHoldSpeech').checked = settings.doButtonHoldSpeech;
+  document.getElementById('doKeyboardSpeech').checked = settings.doKeyboardSpeech;
+  document.getElementById('doHourlyBreak').checked = settings.doHourlyBreak;
+
+
+  document.getElementById('doButtonHoldSpeech').addEventListener('change', (e) => {
+    settings.doButtonHoldSpeech = e.target.checked;
+    saveAndBroadcast();
+  });
+
+  document.getElementById('doKeyboardSpeech').addEventListener('change', (e) => {
+    settings.doKeyboardSpeech = e.target.checked;
+    saveAndBroadcast();
+  });
+
+  document.getElementById('doHourlyBreak').addEventListener('change', (e) => {
+    settings.doHourlyBreak = e.target.checked;
+    saveAndBroadcast();
+  });
+
+
+  /////////////////////////////////////////////////
+
+
   toggleNightShiftTimes(settings.nightShift);
   document.querySelectorAll('.color-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.color === settings.glowColor);
