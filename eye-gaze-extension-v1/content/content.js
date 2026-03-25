@@ -272,8 +272,14 @@
     lastSpokenKey = currentKey;
     keySpeechTimeout = setTimeout(() => { lastSpokenKey = null; }, 500);
 
-    const thaiName = getKeyNameThai(e.key, e.code);
-    speakThai(thaiName);
+    // เพิ่มการพูดคีย์บอร์ด - ตรวจสอบ doKeyboardSpeech
+    if (settings.doKeyboardSpeech && e.key !== 'Control' && e.key !== 'Ctrl') {
+      // ไม่พูดปุ่ม Control 
+      if (e.key === 'Control' || e.key === 'Ctrl') return;
+
+      const thaiName = getKeyNameThai(e.key, e.code);
+      speakThai(thaiName);
+    }
   });
 
   document.addEventListener('keyup', (e) => {
@@ -1228,7 +1234,7 @@
     hideHighlight();
   }
 
-  // ─── Message listener (popup → content) ──────────────────────────────────────
+  // ─── Message listener
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'GET_WS_STATUS') {
