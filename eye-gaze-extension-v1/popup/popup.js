@@ -18,6 +18,9 @@ const DEFAULTS = {
   doButtonHoldSpeech: true,
   doKeyboardSpeech: true,
   doHourlyBreak: true,
+  enableCustomCursor: true,  // เพิ่ม
+  cursorSize: 32,            // เพิ่ม
+  cursorColor: '#a855f7',
 };
 
 let settings = { ...DEFAULTS };
@@ -73,6 +76,11 @@ function applySettingsToUI() {
   document.getElementById('nightShiftBrightnessVal').textContent = (settings.nightShiftBrightness ?? 95) + '%';
 
   /////////////////////////////////////////////////
+  document.getElementById('enableCustomCursor').checked = settings.enableCustomCursor;
+  document.getElementById('cursorSize').value = settings.cursorSize;
+  document.getElementById('cursorSizeVal').textContent = settings.cursorSize + 'px';
+  document.getElementById('cursorColor').value = settings.cursorColor;
+  /////////////////////////////////////////////////
 
   document.getElementById('doButtonHoldSpeech').checked = settings.doButtonHoldSpeech;
   document.getElementById('doKeyboardSpeech').checked = settings.doKeyboardSpeech;
@@ -96,6 +104,25 @@ function applySettingsToUI() {
 
 
   /////////////////////////////////////////////////
+  // Cursor size slider
+  document.getElementById('cursorSize').addEventListener('input', (e) => {
+    settings.cursorSize = parseInt(e.target.value);
+    document.getElementById('cursorSizeVal').textContent = settings.cursorSize + 'px';
+    saveAndBroadcast();
+  });
+
+  // Cursor color picker
+  document.getElementById('cursorColor').addEventListener('input', (e) => {
+    settings.cursorColor = e.target.value;
+    saveAndBroadcast();
+  });
+
+  // Enable custom cursor toggle
+  document.getElementById('enableCustomCursor').addEventListener('change', (e) => {
+    settings.enableCustomCursor = e.target.checked;
+    saveAndBroadcast();
+  });
+  ///////////////////////////////////////////////////
 
 
   toggleNightShiftTimes(settings.nightShift);

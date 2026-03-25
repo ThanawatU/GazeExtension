@@ -23,6 +23,13 @@
     nightShiftBrightness: 95,
     nightShiftStart: '20:00',
     nightShiftEnd: '07:00',
+
+
+
+
+
+    cursorSize: 32,        // เพิ่ม: ขนาด cursor (px)
+    cursorColor: '#a855f7', // เพิ่ม: สี cursor
   };
 
   // ─── Runtime state ────────────────────────────────────────────────────────────
@@ -560,6 +567,7 @@
     updateDrowsyOverlay();
     stopHourlyBreakReminder();
     stopButtonHoldListener();
+    resetCursorSize();
   }
 
   // ─── Hourly Break Reminder ─────────────────────────────────────────────────────────
@@ -1230,6 +1238,7 @@
     if (msg.type === 'SETTINGS_UPDATE') {
       settings = { ...settings, ...msg.settings };
       if (settings.enabled) {
+        applyCursorSize()
         connectWS();
         showHUD();
         startHourlyBreakReminder();
@@ -1277,6 +1286,132 @@
     }
   });
 
+
+
+
+
+
+
+
+
+
+
+
+  ///////////////////////////////////////////mouse cursor size ///////////////////////////
+  //// ─── Cursor size control ───────────────────────────────────────────────────────
+
+  let cursorStyleElement = null;
+
+  function applyCursorSize() {
+    if (!settings.enabled) return;
+
+    if (cursorStyleElement) {
+      cursorStyleElement.remove();
+      cursorStyleElement = null;
+    }
+
+    if (!settings.cursorSize || settings.cursorSize <= 0 || !settings.enableCustomCursor) {
+      return;
+    }
+
+    // สร้าง div สำหรับ custom cursor
+    const customCursor = document.createElement('div');
+    customCursor.id = '__gazelink_custom_cursor__';
+
+    const size = settings.cursorSize;
+    const color = settings.cursorColor;
+
+    // สร้าง SVG สำหรับ cursor หัวแหลม
+    // SVG cursor ทรงมาตรฐาน
+    const svg = `
+<svg width="${size}" height="${size}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path 
+    d="M3 2 L3 22 L8 17 L11 23 L14 22 L11 16 L17 16 Z"
+    fill="${color}"
+    stroke="white"
+    stroke-width="1.5"
+    stroke-linejoin="round"
+  />
+</svg>
+`;
+
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    Object.assign(customCursor.style, {
+      position: 'fixed',
+      width: size + 'px',
+      height: size + 'px',
+      background: `url('${svgUrl}') no-repeat center center`,
+      backgroundSize: 'contain',
+      pointerEvents: 'none',
+      zIndex: '2147483647',
+      transform: 'translate(-20%, -20%)', // จุด hot spot ที่ปลายลูกศร
+      transition: 'all 0.02s linear',
+      display: 'none',
+      filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.3))'
+    });
+
+    document.documentElement.appendChild(customCursor);
+
+    // ซ่อน cursor จริง
+    const style = document.createElement('style');
+    style.textContent = `
+    * {
+      cursor: none !important;
+    }
+  `;
+    document.documentElement.appendChild(style);
+
+    // ติดตามการเคลื่อนที่ของเมาส์
+    const mouseMoveHandler = (e) => {
+      customCursor.style.left = e.clientX + 'px';
+      customCursor.style.top = e.clientY + 'px';
+      customCursor.style.display = 'block';
+    };
+
+    document.addEventListener('mousemove', mouseMoveHandler);
+
+    // เก็บ event handler ไว้สำหรับ cleanup
+    customCursor._mouseMoveHandler = mouseMoveHandler;
+    customCursor._styleElement = style;
+
+    cursorStyleElement = customCursor;
+  }
+
+  function resetCursorSize() {
+    if (cursorStyleElement) {
+      // ลบ event listener
+      if (cursorStyleElement._mouseMoveHandler) {
+        document.removeEventListener('mousemove', cursorStyleElement._mouseMoveHandler);
+      }
+      // ลบ style ที่ซ่อน cursor
+      if (cursorStyleElement._styleElement) {
+        cursorStyleElement._styleElement.remove();
+      }
+      cursorStyleElement.remove();
+      cursorStyleElement = null;
+    }
+  }
+
+  function resetCursorSize() {
+    if (cursorStyleElement) {
+      cursorStyleElement.remove();
+      cursorStyleElement = null;
+    }
+  }
+  ////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
   // ─── Init ─────────────────────────────────────────────────────────────────────
 
   chrome.storage.local.get(['gazeSettings', 'gazelink_drowsy'], (result) => {
@@ -1291,6 +1426,7 @@
       connectWS();
       showHUD();
       startHourlyBreakReminder();
+      applyCursorSize();
       if (settings.doButtonHoldSpeech) {
         startButtonHoldListener();
       }

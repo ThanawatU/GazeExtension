@@ -396,6 +396,49 @@
       <div class="color-btn" data-color="#ec4899" style="background:#ec4899"></div>
       <div class="color-btn" data-color="#eab308" style="background:#eab308"></div>
     </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <div class="section-title">Cursor Settings</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cursor Size</div>
+        <div class="setting-sublabel">Custom cursor size (px)</div>
+      </div>
+      <div class="slider-input-wrap">
+        <input type="range" id="cursorSize" min="16" max="100" step="2" value="32" />
+        <span class="value-badge" id="cursorSizeVal">32px</span>
+      </div>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Cursor Color</div>
+        <div class="setting-sublabel">Custom cursor color</div>
+      </div>
+      <input type="color" id="cursorColor" value="#a855f7"
+        style="width: 40px; height: 32px; background: #1a1a24; border: 1px solid #3a3a5a; border-radius: 6px; cursor: pointer;" />
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="enableCustomCursor" checked />
+      <div>
+        <label for="enableCustomCursor">Enable custom cursor</label>
+        <small>Replace default cursor with custom size and color</small>
+      </div>
+    </div>
   </div>
 
   <div class="settings-section">
