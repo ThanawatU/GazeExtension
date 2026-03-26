@@ -643,7 +643,7 @@
 
     document.getElementById('__gazelink_hour_break_btn__').addEventListener('click', () => {
       dismissHourBreakReminder();
-      
+
     });
 
     document.getElementById('__gazelink_hour_break_snooze__').addEventListener('click', () => {
@@ -652,7 +652,7 @@
       lastBreakReminder = Date.now();
       breakReminderInterval = setInterval(() => {
         checkHourlyBreak();
-      }, 15*60*1000);
+      }, 15 * 60 * 1000);
     });
   }
 
@@ -1312,7 +1312,16 @@
   function applyCursorSize() {
     if (!settings.enabled) return;
 
+    // ลบ cursor เก่า
     if (cursorStyleElement) {
+      if (cursorStyleElement._mouseMoveHandler) {
+        document.removeEventListener('mousemove', cursorStyleElement._mouseMoveHandler);
+      }
+
+      if (cursorStyleElement._styleElement) {
+        cursorStyleElement._styleElement.remove();
+      }
+
       cursorStyleElement.remove();
       cursorStyleElement = null;
     }
@@ -1321,15 +1330,13 @@
       return;
     }
 
-    // สร้าง div สำหรับ custom cursor
     const customCursor = document.createElement('div');
     customCursor.id = '__gazelink_custom_cursor__';
 
     const size = settings.cursorSize;
     const color = settings.cursorColor;
 
-    // สร้าง SVG สำหรับ cursor หัวแหลม
-    // SVG cursor ทรงมาตรฐาน
+    // SVG cursor
     const svg = `
 <svg width="${size}" height="${size}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <path 
@@ -1345,16 +1352,25 @@
     const svgBlob = new Blob([svg], { type: 'image/svg+xml' });
     const svgUrl = URL.createObjectURL(svgBlob);
 
+    // คำนวณ hotspot จากตำแหน่งปลายลูกศรใน SVG (3,2) ของ viewBox 24x24
+    const hotspotX = (3 / 24) * size;
+    const hotspotY = (2 / 24) * size;
+
     Object.assign(customCursor.style, {
       position: 'fixed',
+      left: '0px',
+      top: '0px',
       width: size + 'px',
       height: size + 'px',
       background: `url('${svgUrl}') no-repeat center center`,
       backgroundSize: 'contain',
       pointerEvents: 'none',
       zIndex: '2147483647',
-      transform: 'translate(-20%, -20%)', // จุด hot spot ที่ปลายลูกศร
-      transition: 'all 0.02s linear',
+
+      // offset ให้ปลาย cursor ตรงตำแหน่งเมาส์จริง
+      transform: `translate(${-hotspotX}px, ${-hotspotY}px)`,
+
+      transition: 'transform 0.02s linear',
       display: 'none',
       filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.3))'
     });
@@ -1370,7 +1386,7 @@
   `;
     document.documentElement.appendChild(style);
 
-    // ติดตามการเคลื่อนที่ของเมาส์
+    // ติดตามเมาส์
     const mouseMoveHandler = (e) => {
       customCursor.style.left = e.clientX + 'px';
       customCursor.style.top = e.clientY + 'px';
@@ -1379,7 +1395,7 @@
 
     document.addEventListener('mousemove', mouseMoveHandler);
 
-    // เก็บ event handler ไว้สำหรับ cleanup
+    // เก็บ reference สำหรับ cleanup
     customCursor._mouseMoveHandler = mouseMoveHandler;
     customCursor._styleElement = style;
 
