@@ -581,7 +581,7 @@
   let lastBreakReminder = null;
   let breakReminderInterval = null;
   let breakReminderScreenVisible = false;
-  const ONE_HOUR_MS = 20 * 60 * 1000;
+  const ONE_HOUR_MS = 10 * 1000;
 
   const hourBreakScreen = document.createElement('div');
   hourBreakScreen.id = '__gazelink_hour_break__';
@@ -643,6 +643,7 @@
 
     document.getElementById('__gazelink_hour_break_btn__').addEventListener('click', () => {
       dismissHourBreakReminder();
+      
     });
 
     document.getElementById('__gazelink_hour_break_snooze__').addEventListener('click', () => {
@@ -651,7 +652,7 @@
       lastBreakReminder = Date.now();
       breakReminderInterval = setInterval(() => {
         checkHourlyBreak();
-      }, 60000);
+      }, 15*60*1000);
     });
   }
 
@@ -674,7 +675,7 @@
       lastBreakReminder = now;
       return;
     }
-
+    console.log(now, lastBreakReminder, ONE_HOUR_MS);
     if (now - lastBreakReminder >= ONE_HOUR_MS) {
       showHourBreakReminder();
       lastBreakReminder = now;
@@ -688,7 +689,7 @@
     lastBreakReminder = Date.now();
     breakReminderInterval = setInterval(() => {
       checkHourlyBreak();
-    }, 60000);
+    }, ONE_HOUR_MS);
   }
 
   function stopHourlyBreakReminder() {
